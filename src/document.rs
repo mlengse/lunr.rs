@@ -1,4 +1,4 @@
-pub trait Document<'a> {
+pub trait Document {
     fn id(&self) -> String;
     fn fields(&self) -> Vec<Field>;
 }

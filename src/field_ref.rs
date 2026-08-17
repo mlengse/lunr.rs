@@ -1,5 +1,7 @@
 use serde::ser::{Serialize, Serializer};
 
+const JOINER: &str = "/";
+
 #[derive(Hash, Eq, PartialEq, Debug, Clone)]
 pub struct FieldRef {
     pub document_ref: String,
@@ -13,6 +15,14 @@ impl FieldRef {
             field_name: field_name.into(),
         }
     }
+
+    pub fn from_string(field_ref_string: &str) -> Option<FieldRef> {
+        let parts: Vec<&str> = field_ref_string.splitn(2, JOINER).collect();
+        if parts.len() != 2 {
+            return None;
+        }
+        Some(FieldRef::new(parts[1], parts[0]))
+    }
 }
 
 
@@ -20,6 +30,6 @@ impl Serialize for FieldRef {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where S: Serializer
     {
-        serializer.serialize_str(&format!("{}/{}", self.field_name, self.document_ref))
+        serializer.serialize_str(&format!("{}{}{}", self.field_name, JOINER, self.document_ref))
     }
 }

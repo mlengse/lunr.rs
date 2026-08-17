@@ -1,12 +1,9 @@
-use inverted_index::InvertedIndex;
-use field_ref::FieldRef;
-use vector::Vector;
-use builder::Builder;
+use crate::inverted_index::InvertedIndex;
+use crate::field_ref::FieldRef;
+use crate::vector::Vector;
+use crate::builder::Builder;
 
 use serde::ser::{Serialize, Serializer, SerializeStruct};
-
-use std::collections::HashSet;
-use std::convert::From;
 
 type FieldVector = (FieldRef, Vector);
 
@@ -14,7 +11,7 @@ pub struct Index {
     version: String,
     inverted_index: InvertedIndex,
     field_vectors: Vec<FieldVector>,
-    fields: HashSet<String>,
+    fields: Vec<String>,
     pipeline: Vec<String>,
 }
 
@@ -23,12 +20,11 @@ impl From<Builder> for Index {
         builder.build();
 
         Index {
-            version: String::from("2.1.3"),
+            version: String::from("2.3.9"),
             pipeline: vec![],
             inverted_index: builder.inverted_index,
             field_vectors: builder.field_vectors
                 .into_iter()
-                .map(|(k, v)| (k, v))
                 .collect(),
             fields: builder.fields,
         }
@@ -39,7 +35,7 @@ impl Serialize for Index {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where S: Serializer
     {
-        let mut index = serializer.serialize_struct("Index", 3)?;
+        let mut index = serializer.serialize_struct("Index", 5)?;
 
         index.serialize_field("version", &self.version)?;
         index.serialize_field("pipeline", &self.pipeline)?;

@@ -39,7 +39,7 @@ impl IntoIterator for Tokens {
 }
 
 pub type Term = String;
-pub type Metadata = Box<Serialize>;
+pub type Metadata = Box<dyn Serialize>;
 
 pub struct Token {
     pub term: Term,

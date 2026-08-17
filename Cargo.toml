@@ -2,6 +2,7 @@
 name = "lunr"
 version = "0.1.0"
 authors = ["Oliver Nightingale <oliver.nightingale1@gmail.com>"]
+edition = "2021"
 
 [dependencies]
 serde = "1.0"

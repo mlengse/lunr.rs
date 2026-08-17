@@ -1,6 +1,3 @@
-extern crate lunr;
-extern crate serde_json;
-
 use lunr::builder;
 use lunr::index::Index;
 use lunr::document::{Document, Field};
@@ -10,7 +7,7 @@ struct Quote {
     text: String,
 }
 
-impl<'a> Document<'a> for Quote {
+impl Document for Quote {
     fn id(&self) -> String {
         self.id.to_owned()
     }

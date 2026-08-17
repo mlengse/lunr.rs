@@ -1,5 +1,5 @@
-use token::{Metadata, Term, Token};
-use field_ref::FieldRef;
+use crate::token::{Metadata, Term, Token};
+use crate::field_ref::FieldRef;
 
 use serde::ser::{Serialize, SerializeMap, SerializeSeq, Serializer};
 
@@ -35,13 +35,8 @@ impl Serialize for InvertedIndex {
     {
         let mut seq = serializer.serialize_seq(Some(self.len()))?;
 
-        let pairs: Vec<(&Term, &Posting)> = self.index
-            .iter()
-            .map(|pair| pair)
-            .collect();
-
-        for pair in &pairs {
-            seq.serialize_element(pair)?;
+        for pair in &self.index {
+            seq.serialize_element(&pair)?;
         }
 
         seq.end()
@@ -56,7 +51,7 @@ pub struct Posting {
 impl Posting {
     fn new(index: usize) -> Posting {
         Posting {
-            index: index,
+            index,
             field_postings: HashMap::new(),
         }
     }
@@ -71,6 +66,13 @@ impl Posting {
     pub fn len(&self) -> usize {
         self.field_postings.len()
     }
+
+    pub fn document_count(&self) -> usize {
+        self.field_postings
+            .values()
+            .map(|fp| fp.documents.len())
+            .sum()
+    }
 }
 
 impl Serialize for Posting {
@@ -82,7 +84,7 @@ impl Serialize for Posting {
         posting.serialize_entry("_index", &self.index)?;
 
         for (field_name, field_posting) in &self.field_postings {
-            posting.serialize_entry(&field_name, &field_posting)?;
+            posting.serialize_entry(field_name, field_posting)?;
         }
 
         posting.end()
@@ -112,7 +114,7 @@ impl Serialize for FieldPosting {
         let mut field_posting = serializer.serialize_map(Some(self.documents.len()))?;
 
         for (document_ref, metadata) in &self.documents {
-            field_posting.serialize_entry(&document_ref, &metadata)?;
+            field_posting.serialize_entry(document_ref, metadata)?;
         }
 
         field_posting.end()

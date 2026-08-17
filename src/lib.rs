@@ -1,7 +1,3 @@
-extern crate erased_serde;
-extern crate serde;
-extern crate serde_json;
-
 mod field_ref;
 mod token;
 pub mod builder;
