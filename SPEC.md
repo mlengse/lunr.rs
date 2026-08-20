@@ -408,8 +408,8 @@ lunr.js has 540 tests across: `builder`, `field_ref`, `idf`, `index`, `lunr`,
 | `token_set` | **OK** | `TokenSet` with `from_string`, `from_array`, `from_clause`, `from_fuzzy_string`, `intersect`, `to_array` |
 | `token_set_builder` | **OK** | `Builder` with `insert`, `finish`, minimization via suffix sharing |
 | `match_data` | **OK** | `MatchData` with `add()`, `combine()` |
-| `query` | **Missing** | |
-| `query_lexer` | **Missing** | |
-| `query_parser` | **Missing** | |
-| `query_parse_error` | **Missing** | |
+| `query` | **OK** | `Query`, `Clause`, `ClauseOptions`, presence/wildcard constants, `term()`, `clause()`, `is_negated()` |
+| `query_lexer` | **OK** | State-machine lexer with `FieldType`, `TERM`, `EDIT_DISTANCE`, `BOOST`, `PRESENCE` tokens. Whitespace + hyphen separators |
+| `query_parser` | **OK** | Recursive-descent parser: `parseClause`, `parsePresence`, `parseField`, `parseTerm`, `parseEditDistance`, `parseBoost`. Field validation, wildcard disables pipeline |
+| `query_parse_error` | **OK** | `QueryParseError` with `name`, `message`, `start`, `end`. `Display` and `Error` impls |
 | `utils` | **OK** | `warn()`, `as_string()` |

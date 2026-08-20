@@ -14,6 +14,10 @@ pub mod stemmer;
 pub mod stop_word_filter;
 pub mod token_set;
 pub mod trimmer;
+pub mod query;
+pub mod query_lexer;
+pub mod query_parse_error;
+pub mod query_parser;
 pub mod utils;
 
 #[cfg(test)]

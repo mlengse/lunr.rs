@@ -8,6 +8,42 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Phase 5: Query System
+
+**Date:** 2026-08-18
+
+Added full query language support: lexer, parser, query model, and error type.
+All 4 modules ported from lunr.js with state-machine lexer and recursive-descent
+parser.
+
+#### Added
+
+- **`src/query.rs`** — `Query` struct with `clauses` and `all_fields`. `Clause`
+  struct with `fields`, `boost`, `edit_distance`, `use_pipeline`, `wildcard`,
+  `presence`, `term`. `ClauseOptions` for builder pattern. Constants:
+  `WILDCARD_NONE/LEADING/TRAILING`, `PRESENCE_OPTIONAL/REQUIRED/PROHIBITED`.
+  Methods: `clause()`, `term()`, `is_negated()`. 14 unit tests.
+- **`src/query_lexer.rs`** — State-machine lexer using `Option<StateId>`
+  termination (matching JS's `undefined` return). `TokenType` enum: `EOS`,
+  `FIELD`, `TERM`, `EDIT_DISTANCE`, `BOOST`, `PRESENCE`. `Lexeme` struct with
+  `lexeme_type`, `str`, `start`, `end`. States: `lex_text`, `lex_field`,
+  `lex_term`, `lex_edit_distance`, `lex_boost`, `lex_eos`. Handles escape
+  characters, whitespace/hyphen separators, decimal boost values. 12 unit tests.
+- **`src/query_parser.rs`** — Recursive-descent parser consuming lexemes into
+  `Query` clauses. States: `parse_clause`, `parse_presence`, `parse_field`,
+  `parse_term`, `parse_edit_distance`, `parse_boost`. Validates field names
+  against `query.all_fields`, lowercases terms, disables pipeline for wildcards.
+  18 unit tests including error cases.
+- **`src/query_parse_error.rs`** — `QueryParseError` with `name`, `message`,
+  `start`, `end`. Implements `Display` and `std::error::Error`. 3 unit tests.
+
+#### Fixed
+
+- **`src/query_lexer.rs`** — lexer `run()` method used `loop` (infinite loop).
+  Changed to `while let Some(s) = state` with `Option<StateId>` return types,
+  matching JS's `undefined` termination pattern. All state functions now return
+  `Option<LexerStateId>`.
+
 ### Phase 4: TokenSet (DAG)
 
 **Date:** 2026-08-18
