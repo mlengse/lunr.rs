@@ -1,12 +1,13 @@
 use std::collections::HashMap;
+use crate::token::Metadata;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct MatchData {
-    pub metadata: HashMap<String, HashMap<String, HashMap<String, Vec<String>>>>,
+    pub metadata: HashMap<String, HashMap<String, HashMap<String, Vec<Metadata>>>>,
 }
 
 impl MatchData {
-    pub fn new(term: Option<&str>, field: &str, metadata: &HashMap<String, Vec<String>>) -> Self {
+    pub fn new(term: Option<&str>, field: &str, metadata: &HashMap<String, Vec<Metadata>>) -> Self {
         let mut match_data = MatchData {
             metadata: HashMap::new(),
         };
@@ -22,7 +23,7 @@ impl MatchData {
         match_data
     }
 
-    pub fn add(&mut self, term: &str, field: &str, metadata: &HashMap<String, Vec<String>>) {
+    pub fn add(&mut self, term: &str, field: &str, metadata: &HashMap<String, Vec<Metadata>>) {
         if !self.metadata.contains_key(term) {
             self.metadata.insert(term.to_string(), HashMap::new());
         }

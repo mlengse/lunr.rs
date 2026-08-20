@@ -8,6 +8,41 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Phase 6: Search & Index.query
+
+**Date:** 2026-08-18
+
+Added full search capability: Vector math methods, Index search/query/load,
+TokenSet integration, and refactored Pipeline to use enum-based dispatch.
+
+#### Added
+
+- **`src/vector.rs`** — `upsert()` with merge function, `dot()` (merge-join
+  over sorted BTreeMap), `magnitude()` (Cell-cached for interior mutability),
+  `similarity()` (asymmetric: `self.dot(other) / self.magnitude()`). 9 unit tests.
+- **`src/index.rs`** — `search(query_string)` parses query via QueryParser and
+  executes against index. `query(Query)` executes full query: term expansion via
+  TokenSet intersection, required/prohibited/optional presence, per-field scoring
+  via query vector similarity. `Index::load(serde_json::Value)` deserializes
+  from JSON with field vectors, inverted index, token set, and pipeline
+  reconstruction. Builds `token_set` from inverted index terms in `From<Builder>`.
+- **`src/inverted_index.rs`** — `terms()` iterator, `field_posting()`,
+  `field_postings()`, `add_posting_raw()`, `Posting::new_raw()`,
+  `Posting::add_metadata_raw()`. Made `FieldPosting` public.
+
+#### Changed
+
+- **`src/pipeline.rs`** — Refactored from `Box<dyn FnMut>` closures to
+  `PipelineFunction` enum (`Trimmer`, `StopWordFilter`, `Stemmer`). Pipeline
+  now derives `Clone` via enum dispatch. Added `add_function()` method.
+- **`src/field_ref.rs`** — Added `Display` impl and `to_ref_string()` method.
+- **`src/match_data.rs`** — Changed metadata type from `HashMap<String, Vec<String>>`
+  to `HashMap<String, Vec<Metadata>>` (serde_json::Value). Added `Default` impl.
+- **`src/vector.rs`** — Magnitude cache changed from `Option<f64>` to
+  `Cell<Option<f64>>` for interior mutability. `similarity()` takes `&self`.
+- **`src/set.rs`** — Added `empty()` and `complete()` constructors.
+- **`src/token_set.rs`** — Added `TokenSet::builder()` convenience method.
+
 ### Phase 5: Query System
 
 **Date:** 2026-08-18

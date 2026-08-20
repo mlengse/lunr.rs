@@ -10,6 +10,14 @@ pub enum Set {
 }
 
 impl Set {
+    pub fn empty() -> Self {
+        Set::Empty
+    }
+
+    pub fn complete() -> Self {
+        Set::Complete
+    }
+
     pub fn new(elements: Vec<String>) -> Self {
         let length = elements.len();
         let elements: HashSet<String> = elements.into_iter().collect();

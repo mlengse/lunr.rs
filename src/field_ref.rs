@@ -23,6 +23,16 @@ impl FieldRef {
         }
         Some(FieldRef::new(parts[1], parts[0]))
     }
+
+    pub fn to_ref_string(&self) -> String {
+        format!("{}{}{}", self.field_name, JOINER, self.document_ref)
+    }
+}
+
+impl std::fmt::Display for FieldRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}{}{}", self.field_name, JOINER, self.document_ref)
+    }
 }
 
 

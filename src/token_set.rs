@@ -296,6 +296,12 @@ impl Default for TokenSet {
     }
 }
 
+impl TokenSet {
+    pub fn builder() -> Builder {
+        Builder::new()
+    }
+}
+
 struct Frame {
     node: TokenSet,
     edits_remaining: usize,

@@ -24,6 +24,14 @@ impl InvertedIndex {
         self.index.get(term)
     }
 
+    pub fn terms(&self) -> impl Iterator<Item = &Term> {
+        self.index.keys()
+    }
+
+    pub fn add_posting_raw(&mut self, term: String, posting: Posting) {
+        self.index.insert(term, posting);
+    }
+
     fn len(&self) -> usize {
         self.index.len()
     }
@@ -56,6 +64,28 @@ impl Posting {
         }
     }
 
+    pub fn new_raw(index: usize) -> Posting {
+        Posting {
+            index,
+            field_postings: HashMap::new(),
+        }
+    }
+
+    pub fn add_metadata_raw(
+        &mut self,
+        field_name: String,
+        doc_ref: String,
+        key: String,
+        values: Vec<Metadata>,
+    ) {
+        let fp = self
+            .field_postings
+            .entry(field_name)
+            .or_insert_with(FieldPosting::default);
+        let doc_meta = fp.documents.entry(doc_ref).or_insert_with(HashMap::new);
+        doc_meta.insert(key, values);
+    }
+
     pub fn insert(&mut self, field_ref: FieldRef, token: Token) {
         self.field_postings
             .entry(field_ref.field_name)
@@ -72,6 +102,14 @@ impl Posting {
             .values()
             .map(|fp| fp.documents.len())
             .sum()
+    }
+
+    pub fn field_posting(&self, field_name: &str) -> Option<&FieldPosting> {
+        self.field_postings.get(field_name)
+    }
+
+    pub fn field_postings(&self) -> &HashMap<String, FieldPosting> {
+        &self.field_postings
     }
 }
 
@@ -91,8 +129,8 @@ impl Serialize for Posting {
     }
 }
 
-#[derive(Default)]
-struct FieldPosting {
+#[derive(Default, Clone)]
+pub struct FieldPosting {
     // HashMap<document_ref, HashMap<metadata_key, Vec<Metadata>>>
     documents: HashMap<String, HashMap<String, Vec<Metadata>>>,
 }
@@ -104,6 +142,14 @@ impl FieldPosting {
         for (key, value) in token.metadata {
             metadata.entry(key).or_insert_with(Vec::new).push(value);
         }
+    }
+
+    pub fn document_refs(&self) -> impl Iterator<Item = &str> {
+        self.documents.keys().map(|s| s.as_str())
+    }
+
+    pub fn metadata(&self, doc_ref: &str) -> Option<&HashMap<String, Vec<Metadata>>> {
+        self.documents.get(doc_ref)
     }
 }
 

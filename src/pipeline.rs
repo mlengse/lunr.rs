@@ -1,48 +1,48 @@
 use crate::token::Token;
 
+#[derive(Clone)]
+pub enum PipelineFunction {
+    Trimmer,
+    StopWordFilter,
+    Stemmer,
+}
+
+impl PipelineFunction {
+    pub fn run(&mut self, token: Token) -> PipelineResult {
+        match self {
+            PipelineFunction::Trimmer => crate::trimmer::trimmer(token),
+            PipelineFunction::StopWordFilter => crate::stop_word_filter::stop_word_filter(token),
+            PipelineFunction::Stemmer => crate::stemmer::stemmer(token),
+        }
+    }
+
+    pub fn label(&self) -> &str {
+        match self {
+            PipelineFunction::Trimmer => "trimmer",
+            PipelineFunction::StopWordFilter => "stopWordFilter",
+            PipelineFunction::Stemmer => "stemmer",
+        }
+    }
+}
+
 pub enum PipelineResult {
     Token(Token),
     Tokens(Vec<Token>),
     None,
 }
 
+#[derive(Clone)]
 pub struct Pipeline {
-    stack: Vec<Box<dyn FnMut(Token) -> PipelineResult + Send + Sync>>,
-    labels: Vec<String>,
+    stack: Vec<PipelineFunction>,
 }
 
 impl Pipeline {
     pub fn new() -> Self {
-        Pipeline {
-            stack: Vec::new(),
-            labels: Vec::new(),
-        }
+        Pipeline { stack: Vec::new() }
     }
 
-    pub fn add(&mut self, label: &str, f: Box<dyn FnMut(Token) -> PipelineResult + Send + Sync>) {
-        self.stack.push(f);
-        self.labels.push(label.to_string());
-    }
-
-    pub fn before(&mut self, existing_label: &str, new_label: &str, f: Box<dyn FnMut(Token) -> PipelineResult + Send + Sync>) {
-        let pos = self.labels.iter().position(|l| l == existing_label)
-            .expect("Cannot find existing function");
-        self.stack.insert(pos, f);
-        self.labels.insert(pos, new_label.to_string());
-    }
-
-    pub fn after(&mut self, existing_label: &str, new_label: &str, f: Box<dyn FnMut(Token) -> PipelineResult + Send + Sync>) {
-        let pos = self.labels.iter().position(|l| l == existing_label)
-            .expect("Cannot find existing function");
-        self.stack.insert(pos + 1, f);
-        self.labels.insert(pos + 1, new_label.to_string());
-    }
-
-    pub fn remove(&mut self, label: &str) {
-        if let Some(pos) = self.labels.iter().position(|l| l == label) {
-            let _ = self.stack.remove(pos);
-            self.labels.remove(pos);
-        }
+    pub fn add_function(&mut self, func: PipelineFunction) {
+        self.stack.push(func);
     }
 
     pub fn run(&mut self, tokens: Vec<Token>) -> Vec<Token> {
@@ -50,7 +50,7 @@ impl Pipeline {
         for f in &mut self.stack {
             let mut memo = Vec::new();
             for token in tokens {
-                match f(token) {
+                match f.run(token) {
                     PipelineResult::Token(t) => memo.push(t),
                     PipelineResult::Tokens(ts) => memo.extend(ts),
                     PipelineResult::None => {}
@@ -70,13 +70,8 @@ impl Pipeline {
             .collect()
     }
 
-    pub fn reset(&mut self) {
-        self.stack.clear();
-        self.labels.clear();
-    }
-
     pub fn to_json(&self) -> Vec<String> {
-        self.labels.clone()
+        self.stack.iter().map(|f| f.label().to_string()).collect()
     }
 }
 
