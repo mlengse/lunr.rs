@@ -8,6 +8,26 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Phase 3: Token System
+
+**Date:** 2026-08-18
+
+Enhanced Token with clone/metadata, Tokens with position metadata, and wired
+pipeline into builder for token processing during index building.
+
+#### Changed
+
+- **`src/token.rs`** — `Metadata` type changed from `Box<dyn Serialize>` to
+  `serde_json::Value` (cloneable, serializable). Added `clone()` and
+  `clone_with()` methods. `Tokens::from(String)` now splits on whitespace
+  and hyphens with position metadata `[start, length]` and index.
+- **`src/pipeline.rs`** — removed unused `HashMap` import. Added `before()`,
+  `after()`, `remove()` methods. `Pipeline::run()` now takes `Vec<Token>`
+  and returns `Vec<Token>`.
+- **`src/builder.rs`** — added `pipeline: Pipeline` field. `Builder::add()`
+  now runs tokens through the pipeline before indexing. Uses `std::mem::take`
+  to avoid borrow conflicts.
+
 ### Phase 2: Core Infrastructure
 
 **Date:** 2026-08-18

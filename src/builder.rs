@@ -2,6 +2,7 @@ use crate::document::Document;
 use crate::field_ref::FieldRef;
 use crate::idf;
 use crate::inverted_index::InvertedIndex;
+use crate::pipeline::Pipeline;
 use crate::vector::Vector;
 
 use crate::token::{Term, Tokens};
@@ -15,6 +16,7 @@ pub struct Builder {
     pub inverted_index: InvertedIndex,
     pub field_vectors: HashMap<FieldRef, Vector>,
     pub fields: Vec<String>,
+    pub pipeline: Pipeline,
 
     term_frequencies: HashMap<FieldRef, HashMap<Term, u32>>,
     field_lengths: HashMap<FieldRef, usize>,
@@ -31,6 +33,7 @@ impl Default for Builder {
             inverted_index: InvertedIndex::default(),
             field_vectors: HashMap::new(),
             fields: Vec::new(),
+            pipeline: Pipeline::new(),
             term_frequencies: HashMap::new(),
             field_lengths: HashMap::new(),
             field_refs: Vec::new(),
@@ -60,7 +63,11 @@ impl Builder {
 
             *self.field_lengths.entry(field_ref.clone()).or_insert(0) += field_length;
 
-            for token in tokens {
+            let mut pipeline = std::mem::take(&mut self.pipeline);
+            let processed_tokens: Vec<_> = pipeline.run(tokens.into_iter().collect());
+            self.pipeline = pipeline;
+
+            for token in processed_tokens {
                 *self.term_frequencies
                      .entry(field_ref.clone())
                      .or_insert_with(HashMap::new)

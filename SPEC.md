@@ -392,16 +392,16 @@ lunr.js has 540 tests across: `builder`, `field_ref`, `idf`, `index`, `lunr`,
 | Module | Status | Notes |
 |---|---|---|
 | `field_ref` | Partial | `fromString` added, `JOINER` const |
-| `token` | Partial | Missing `update`, `clone`, metadata unused; `dyn` trait fixed |
-| `tokenizer` | Partial | No NFC, no position metadata, no separator config |
+| `token` | **OK** | `update()`, `clone()`, `clone_with()`, `Display`. `Metadata` = `serde_json::Value` |
+| `tokenizer` | Partial | Split on whitespace+hyphens with position metadata. No NFC (deferred), no separator config |
 | `vector` | Partial | Missing `upsert`, `dot`, `magnitude`, `similarity` |
 | `inverted_index` | Partial | Correct shape, `document_count()` added |
-| `builder` | Partial | IDF + BM25 correct, shared idf module, validation added. No `field()`, no pipeline |
+| `builder` | Partial | IDF + BM25 correct, shared idf module, validation added, pipeline wired. No `field()`, no `b()`/`k1()` setters |
 | `index` | Partial | Serialization: version, struct count, fields ordering fixed. No search, no query, no load |
 | `document` | OK | Lifetime `'a` removed |
 | `set` | **OK** | `Empty`, `Complete`, `Elements` variants; `union()`, `intersect()`, `contains()` |
 | `idf` | **OK** | Standalone `idf(posting, document_count)`, shared by builder & index |
-| `pipeline` | **OK** | `Pipeline` with `run()`, `run_string()`, `reset()`, `to_json()`, `load()` |
+| `pipeline` | **OK** | `Pipeline` with `run()`, `run_string()`, `reset()`, `to_json()`, `before()`, `after()`, `remove()` |
 | `stemmer` | **OK** | Porter stemmer ported from lunr.js, 5-step algorithm |
 | `stop_word_filter` | **OK** | English stop words, `generate_stop_word_filter()` factory |
 | `trimmer` | **OK** | Non-word char trimming with Unicode ranges |

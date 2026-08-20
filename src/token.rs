@@ -1,13 +1,14 @@
 use std::fmt;
-
-use erased_serde::Serialize;
-
 use std::convert::From;
 use std::collections::HashMap;
 use std::cmp::Ordering;
 use std::hash::{Hash, Hasher};
 
-#[derive(Debug)]
+use serde_json::Value;
+
+pub type Metadata = Value;
+
+#[derive(Debug, Clone)]
 pub struct Tokens(Vec<Token>);
 
 impl Tokens {
@@ -18,7 +19,38 @@ impl Tokens {
 
 impl From<String> for Tokens {
     fn from(text: String) -> Tokens {
-        let tokens = text.split_whitespace().map(Token::new).collect();
+        let normalized = text.to_lowercase();
+        let mut tokens = Vec::new();
+        let mut start = 0;
+        let mut index = 0;
+
+        for (end, ch) in normalized.char_indices() {
+            if ch.is_whitespace() || ch == '-' {
+                if end > start {
+                    let term = normalized[start..end].to_string();
+                    let mut metadata = HashMap::new();
+                    metadata.insert("position".to_string(), Value::Array(vec![
+                        Value::Number(start.into()),
+                        Value::Number((end - start).into()),
+                    ]));
+                    metadata.insert("index".to_string(), Value::Number(index.into()));
+                    tokens.push(Token { term, metadata });
+                    index += 1;
+                }
+                start = end + ch.len_utf8();
+            }
+        }
+
+        if start < normalized.len() {
+            let term = normalized[start..].to_string();
+            let mut metadata = HashMap::new();
+            metadata.insert("position".to_string(), Value::Array(vec![
+                Value::Number(start.into()),
+                Value::Number((normalized.len() - start).into()),
+            ]));
+            metadata.insert("index".to_string(), Value::Number(index.into()));
+            tokens.push(Token { term, metadata });
+        }
 
         Tokens(tokens)
     }
@@ -40,8 +72,8 @@ impl IntoIterator for Tokens {
 }
 
 pub type Term = String;
-pub type Metadata = Box<dyn Serialize>;
 
+#[derive(Clone)]
 pub struct Token {
     pub term: Term,
     pub metadata: HashMap<String, Metadata>,
@@ -55,13 +87,14 @@ impl Token {
         }
     }
 
-    pub fn update<F: FnMut(&str) -> String>(&mut self, mut f: F) -> bool {
-        let new_term = f(&self.term);
-        if new_term.is_empty() {
-            false
-        } else {
-            self.term = new_term;
-            true
+    pub fn update<F: FnMut(String, HashMap<String, Metadata>) -> String>(&mut self, mut f: F) {
+        self.term = f(self.term.clone(), self.metadata.clone());
+    }
+
+    pub fn clone_with<F: FnMut(String, HashMap<String, Metadata>) -> String>(&self, mut f: F) -> Token {
+        Token {
+            term: f(self.term.clone(), self.metadata.clone()),
+            metadata: self.metadata.clone(),
         }
     }
 }
@@ -74,7 +107,6 @@ impl fmt::Display for Token {
 
 impl fmt::Debug for Token {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        // TODO: include a list of metadata keys
         write!(f, "Token({})", self.term)
     }
 }
@@ -101,7 +133,7 @@ impl PartialOrd for Token {
 
 impl Hash for Token {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.term.hash(state)
+        self.term.hash(state);
     }
 }
 
@@ -124,8 +156,7 @@ mod tests {
     #[test]
     fn token_metadata() {
         let mut token = Token::new("foo");
-        token.metadata.insert("string".into(), Box::new("string"));
-        token.metadata.insert("number".into(), Box::new(123));
-        token.metadata.insert("vec".into(), Box::new(vec![1, 2]));
+        token.metadata.insert("string".into(), Value::String("string".into()));
+        token.metadata.insert("number".into(), Value::Number(123.into()));
     }
 }

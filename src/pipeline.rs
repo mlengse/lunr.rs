@@ -1,15 +1,9 @@
-use std::collections::HashMap;
-
 use crate::token::Token;
 
 pub enum PipelineResult {
     Token(Token),
     Tokens(Vec<Token>),
     None,
-}
-
-pub trait PipelineFunction: FnMut(Token) -> PipelineResult + Send + Sync {
-    fn label(&self) -> &str;
 }
 
 pub struct Pipeline {
@@ -28,6 +22,27 @@ impl Pipeline {
     pub fn add(&mut self, label: &str, f: Box<dyn FnMut(Token) -> PipelineResult + Send + Sync>) {
         self.stack.push(f);
         self.labels.push(label.to_string());
+    }
+
+    pub fn before(&mut self, existing_label: &str, new_label: &str, f: Box<dyn FnMut(Token) -> PipelineResult + Send + Sync>) {
+        let pos = self.labels.iter().position(|l| l == existing_label)
+            .expect("Cannot find existing function");
+        self.stack.insert(pos, f);
+        self.labels.insert(pos, new_label.to_string());
+    }
+
+    pub fn after(&mut self, existing_label: &str, new_label: &str, f: Box<dyn FnMut(Token) -> PipelineResult + Send + Sync>) {
+        let pos = self.labels.iter().position(|l| l == existing_label)
+            .expect("Cannot find existing function");
+        self.stack.insert(pos + 1, f);
+        self.labels.insert(pos + 1, new_label.to_string());
+    }
+
+    pub fn remove(&mut self, label: &str) {
+        if let Some(pos) = self.labels.iter().position(|l| l == label) {
+            let _ = self.stack.remove(pos);
+            self.labels.remove(pos);
+        }
     }
 
     pub fn run(&mut self, tokens: Vec<Token>) -> Vec<Token> {
@@ -62,20 +77,6 @@ impl Pipeline {
 
     pub fn to_json(&self) -> Vec<String> {
         self.labels.clone()
-    }
-
-    pub fn load(labels: &[String], registry: &HashMap<String, Box<dyn FnMut(Token) -> PipelineResult + Send + Sync>>) -> Self {
-        let mut _pipeline = Pipeline::new();
-        for label in labels {
-            if let Some(_f) = registry.get(label) {
-                // Note: We can't clone boxed trait objects, so this is a placeholder
-                // In practice, we'd need a registry of factory functions
-                eprintln!("Warning: Pipeline::load not yet implemented for dynamic registry");
-            } else {
-                panic!("Cannot load unregistered function: {}", label);
-            }
-        }
-        _pipeline
     }
 }
 
