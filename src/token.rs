@@ -1,10 +1,11 @@
+use std::fmt;
+
 use erased_serde::Serialize;
 
 use std::convert::From;
 use std::collections::HashMap;
 use std::cmp::Ordering;
 use std::hash::{Hash, Hasher};
-use std::fmt;
 
 #[derive(Debug)]
 pub struct Tokens(Vec<Token>);
@@ -47,11 +48,27 @@ pub struct Token {
 }
 
 impl Token {
-    fn new<S: Into<String>>(term: S) -> Token {
+    pub fn new<S: Into<String>>(term: S) -> Token {
         Token {
             term: term.into(),
             metadata: HashMap::new(),
         }
+    }
+
+    pub fn update<F: FnMut(&str) -> String>(&mut self, mut f: F) -> bool {
+        let new_term = f(&self.term);
+        if new_term.is_empty() {
+            false
+        } else {
+            self.term = new_term;
+            true
+        }
+    }
+}
+
+impl fmt::Display for Token {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.term)
     }
 }
 

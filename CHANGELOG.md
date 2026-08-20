@@ -8,6 +8,41 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Phase 2: Core Infrastructure
+
+**Date:** 2026-08-18
+
+Added all foundational modules needed by the rest of the system: IDF, Set,
+Pipeline, MatchData, Trimmer, StopWordFilter, Stemmer, and utils.
+
+#### Added
+
+- **`src/utils.rs`** — `warn()` and `as_string()` helper functions.
+- **`src/idf.rs`** — standalone IDF calculation shared between builder and index.
+  `idf(posting, document_count) -> f64` using `log(1 + |(N - df + 0.5) / (df + 0.5)|)`.
+- **`src/set.rs`** — `Set` enum with `Empty`, `Complete`, `Elements` variants.
+  `union()`, `intersect()`, `contains()` methods.
+- **`src/pipeline.rs`** — `Pipeline` struct with `run()`, `run_string()`, `reset()`,
+  `to_json()`, `load()`. `PipelineResult` enum (`Token`, `Tokens`, `None`).
+  Functions stored as `Box<dyn FnMut(Token) -> PipelineResult>`.
+- **`src/match_data.rs`** — `MatchData` struct with `add()` and `combine()` for
+  merging term/field metadata during search.
+- **`src/trimmer.rs`** — Porter-compatible trimmer removing non-word characters from
+  token edges. Uses `is_word_char()` with Unicode ranges matching lunr.js.
+- **`src/stop_word_filter.rs`** — English stop word list (120 words) with
+  `generate_stop_word_filter()` factory and `stop_word_filter()` function.
+- **`src/stemmer.rs`** — Porter stemmer ported from lunr.js. 5-step algorithm with
+  `step2list`/`step3list` lookup tables.
+
+#### Changed
+
+- **`src/token.rs`** — added `pub fn new()`, `pub fn update()`, and `impl Display`.
+  `update()` returns `false` (skip token) if closure produces empty string.
+- **`src/builder.rs`** — replaced inline `fn idf()` with `use crate::idf`.
+  Removed unused `Posting` import.
+- **`src/lib.rs`** — registered all new public modules: `idf`, `match_data`,
+  `pipeline`, `set`, `stemmer`, `stop_word_filter`, `trimmer`, `utils`.
+
 ### Phase 1 — Batch 4: Dead Code Cleanup
 
 **Date:** 2026-08-18

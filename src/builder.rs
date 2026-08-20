@@ -1,6 +1,7 @@
 use crate::document::Document;
 use crate::field_ref::FieldRef;
-use crate::inverted_index::{InvertedIndex, Posting};
+use crate::idf;
+use crate::inverted_index::InvertedIndex;
 use crate::vector::Vector;
 
 use crate::token::{Term, Tokens};
@@ -89,7 +90,7 @@ impl Builder {
             for term in term_frequencies.keys() {
                 let tf = f64::from(*term_frequencies.get(term).expect("token frequency missing"));
                 let posting = self.inverted_index.posting(term).expect("posting missing");
-                let idf = self.idf(posting, document_count);
+                let idf = idf::idf(posting, document_count);
                 let score = idf * (tf * (self.k1 + 1.0))
                     / (tf + self.k1 * (1.0 - self.b + self.b * field_length as f64 / avg_field_length));
 
@@ -106,12 +107,5 @@ impl Builder {
         }
         let total: usize = self.field_lengths.values().sum();
         total as f64 / self.field_lengths.len() as f64
-    }
-
-    fn idf(&self, posting: &Posting, document_count: usize) -> f64 {
-        let documents_with_term = posting.document_count();
-        let x = (document_count as f64 - documents_with_term as f64 + 0.5)
-              / (documents_with_term as f64 + 0.5);
-        (1.0 + x.abs()).ln()
     }
 }

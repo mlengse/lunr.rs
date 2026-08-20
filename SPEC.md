@@ -396,20 +396,20 @@ lunr.js has 540 tests across: `builder`, `field_ref`, `idf`, `index`, `lunr`,
 | `tokenizer` | Partial | No NFC, no position metadata, no separator config |
 | `vector` | Partial | Missing `upsert`, `dot`, `magnitude`, `similarity` |
 | `inverted_index` | Partial | Correct shape, `document_count()` added |
-| `builder` | Partial | IDF + BM25 fixed, validation added. No `field()`, no pipeline |
+| `builder` | Partial | IDF + BM25 correct, shared idf module, validation added. No `field()`, no pipeline |
 | `index` | Partial | Serialization: version, struct count, fields ordering fixed. No search, no query, no load |
 | `document` | OK | Lifetime `'a` removed |
-| `set` | **Missing** | |
-| `idf` | **Missing** | Currently inlined in builder (wrong formula) |
-| `pipeline` | **Missing** | |
-| `stemmer` | **Missing** | |
-| `stop_word_filter` | **Missing** | |
-| `trimmer` | **Missing** | |
+| `set` | **OK** | `Empty`, `Complete`, `Elements` variants; `union()`, `intersect()`, `contains()` |
+| `idf` | **OK** | Standalone `idf(posting, document_count)`, shared by builder & index |
+| `pipeline` | **OK** | `Pipeline` with `run()`, `run_string()`, `reset()`, `to_json()`, `load()` |
+| `stemmer` | **OK** | Porter stemmer ported from lunr.js, 5-step algorithm |
+| `stop_word_filter` | **OK** | English stop words, `generate_stop_word_filter()` factory |
+| `trimmer` | **OK** | Non-word char trimming with Unicode ranges |
 | `token_set` | **Missing** | |
 | `token_set_builder` | **Missing** | |
-| `match_data` | **Missing** | |
+| `match_data` | **OK** | `MatchData` with `add()`, `combine()` |
 | `query` | **Missing** | |
 | `query_lexer` | **Missing** | |
 | `query_parser` | **Missing** | |
 | `query_parse_error` | **Missing** | |
-| `utils` | **Missing** | |
+| `utils` | **OK** | `warn()`, `as_string()` |

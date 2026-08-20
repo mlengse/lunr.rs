@@ -6,6 +6,15 @@ mod inverted_index;
 mod vector;
 pub mod index;
 
+pub mod idf;
+pub mod match_data;
+pub mod pipeline;
+pub mod set;
+pub mod stemmer;
+pub mod stop_word_filter;
+pub mod trimmer;
+pub mod utils;
+
 #[cfg(test)]
 mod tests {
     #[test]
