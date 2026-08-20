@@ -8,6 +8,23 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Phase 4: TokenSet (DAG)
+
+**Date:** 2026-08-18
+
+Added TokenSet — a minimal finite state automaton for wildcard and fuzzy
+matching. Includes Builder for constructing minimized DAGs from sorted arrays.
+
+#### Added
+
+- **`src/token_set.rs`** — `TokenSet` struct using `Rc<RefCell<TokenSetInner>>`
+  for shared mutable nodes. Methods: `from_string()` (wildcard `*` support),
+  `from_array()` (sorted array → minimized DAG), `from_clause()` (query clause),
+  `from_fuzzy_string()` (edit distance DFA with insert/delete/substitute/transpose),
+  `intersect()` (DAG intersection, no memoization), `to_array()` (extract words).
+- **`src/token_set.rs`** — `Builder` struct for constructing TokenSet from sorted
+  words with suffix sharing via minimization. `Clause` struct for query clauses.
+
 ### Phase 3: Token System
 
 **Date:** 2026-08-18

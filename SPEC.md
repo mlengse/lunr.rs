@@ -405,8 +405,8 @@ lunr.js has 540 tests across: `builder`, `field_ref`, `idf`, `index`, `lunr`,
 | `stemmer` | **OK** | Porter stemmer ported from lunr.js, 5-step algorithm |
 | `stop_word_filter` | **OK** | English stop words, `generate_stop_word_filter()` factory |
 | `trimmer` | **OK** | Non-word char trimming with Unicode ranges |
-| `token_set` | **Missing** | |
-| `token_set_builder` | **Missing** | |
+| `token_set` | **OK** | `TokenSet` with `from_string`, `from_array`, `from_clause`, `from_fuzzy_string`, `intersect`, `to_array` |
+| `token_set_builder` | **OK** | `Builder` with `insert`, `finish`, minimization via suffix sharing |
 | `match_data` | **OK** | `MatchData` with `add()`, `combine()` |
 | `query` | **Missing** | |
 | `query_lexer` | **Missing** | |

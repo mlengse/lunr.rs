@@ -12,6 +12,7 @@ pub mod pipeline;
 pub mod set;
 pub mod stemmer;
 pub mod stop_word_filter;
+pub mod token_set;
 pub mod trimmer;
 pub mod utils;
 
