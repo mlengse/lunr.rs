@@ -1,5 +1,5 @@
-use lunr::builder;
-use lunr::index::Index;
+use lunr::lunr;
+use lunr::builder::FieldOpts;
 use lunr::document::{Document, Field};
 
 struct Quote {
@@ -31,12 +31,11 @@ fn main() {
         text: String::from("work is the curse of the drinking classes"),
     };
 
-    let mut builder = builder::create();
-
-    builder.add(lennon);
-    builder.add(wilde);
-
-    let index: Index = builder.into();
+    let index = lunr(|builder| {
+        builder.field("text", FieldOpts::default());
+        builder.add(lennon);
+        builder.add(wilde);
+    });
 
     let json = serde_json::to_string(&index).expect("json serialization failed");
 

@@ -8,6 +8,36 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Phase 7: Factory & Public API
+
+**Date:** 2026-08-19
+
+Added `lunr()` factory, `Builder::field()` with boost config, BM25 parameter
+setters, separate search pipeline, and updated example.
+
+#### Added
+
+- **`src/lib.rs`** — `lunr()` factory function: creates Builder with default
+  pipeline (trimmer → stopWordFilter → stemmer), searchPipeline (stemmer),
+  calls config closure, builds Index.
+- **`src/builder.rs`** — `FieldOpts { boost }` struct, `Builder::field(name, opts)`
+  method (panics on duplicate), `Builder::b(n)` (clamped 0..=1),
+  `Builder::k1(n)` (clamped ≥ 0). `search_pipeline` field.
+- **`examples/simple.rs`** — Updated to use `lunr()` factory API.
+
+#### Changed
+
+- **`src/index.rs`** — Added `search_pipeline` field to `Index`. Query execution
+  uses `search_pipeline` for term processing (not index pipeline). `Index::load()`
+  deserializes `searchPipeline`. Serialization includes `searchPipeline`.
+- **`src/builder.rs`** — `build()` applies per-field boost to BM25 scores.
+  `From<Builder>` transfers `search_pipeline` to Index.
+
+#### Tests
+
+- 6 new tests: `b` clamping (2), `k1` clamping, field boost applied (2x score),
+  field duplicate panic, search pipeline transfer. Total: 69.
+
 ### Phase 6: Search & Index.query
 
 **Date:** 2026-08-18

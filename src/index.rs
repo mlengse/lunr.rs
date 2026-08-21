@@ -27,6 +27,7 @@ pub struct Index {
     field_vectors: HashMap<String, Vector>,
     pub fields: Vec<String>,
     pub pipeline: Pipeline,
+    pub search_pipeline: Pipeline,
     pub token_set: TokenSet,
 }
 
@@ -59,8 +60,8 @@ impl Index {
 
         for clause in &query.clauses {
             let terms = if clause.use_pipeline {
-                let mut pipeline = self.pipeline.clone();
-                pipeline.run_string(&clause.term)
+                let mut search_pipeline = self.search_pipeline.clone();
+                search_pipeline.run_string(&clause.term)
             } else {
                 vec![clause.term.clone()]
             };
@@ -347,12 +348,30 @@ impl Index {
             }
         }
 
+        let search_pipeline_labels: Vec<String> = json["searchPipeline"]
+            .as_array()
+            .unwrap_or(&Vec::new())
+            .iter()
+            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+            .collect();
+
+        let mut search_pipeline = Pipeline::default();
+        for label in &search_pipeline_labels {
+            match label.as_str() {
+                "trimmer" => search_pipeline.add_function(PipelineFunction::Trimmer),
+                "stopWordFilter" => search_pipeline.add_function(PipelineFunction::StopWordFilter),
+                "stemmer" => search_pipeline.add_function(PipelineFunction::Stemmer),
+                _ => {}
+            }
+        }
+
         Ok(Index {
             version,
             inverted_index,
             field_vectors,
             fields,
             pipeline,
+            search_pipeline,
             token_set,
         })
     }
@@ -378,6 +397,7 @@ impl From<Builder> for Index {
         Index {
             version: String::from("2.3.9"),
             pipeline: builder.pipeline,
+            search_pipeline: builder.search_pipeline,
             inverted_index: builder.inverted_index,
             field_vectors,
             fields: builder.fields,
@@ -391,10 +411,11 @@ impl Serialize for Index {
     where
         S: Serializer,
     {
-        let mut index = serializer.serialize_struct("Index", 5)?;
+        let mut index = serializer.serialize_struct("Index", 6)?;
 
         index.serialize_field("version", &self.version)?;
         index.serialize_field("pipeline", &self.pipeline.to_json())?;
+        index.serialize_field("searchPipeline", &self.search_pipeline.to_json())?;
         index.serialize_field("fields", &self.fields)?;
 
         let fv: Vec<(&str, &Vector)> = self

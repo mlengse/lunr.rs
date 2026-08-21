@@ -396,8 +396,9 @@ lunr.js has 540 tests across: `builder`, `field_ref`, `idf`, `index`, `lunr`,
 | `tokenizer` | Partial | Split on whitespace+hyphens with position metadata. No NFC (deferred), no separator config |
 | `vector` | **OK** | `BTreeMap` sparse vector with `insert`, `upsert`, `dot`, `magnitude` (Cell-cached), `similarity` (asymmetric). `from_elements` for deserialization |
 | `inverted_index` | Partial | Correct shape, `document_count()`, `terms()`, `field_posting()`, `add_posting_raw()` for load |
-| `builder` | Partial | IDF + BM25 correct, shared idf module, validation added, pipeline wired. No `field()`, no `b()`/`k1()` setters |
-| `index` | **OK** | Serialization + `search()`, `query()`, `load()`, TokenSet integration. Builds token_set from terms |
+| `builder` | **OK** | IDF + BM25 correct, shared idf module, validation added, pipeline wired. `field()` with `FieldOpts`, `b()`/`k1()` setters, `search_pipeline` |
+| `index` | **OK** | Serialization + `search()`, `query()`, `load()`, TokenSet integration, `search_pipeline`. Builds token_set from terms |
+| `lunr` (factory) | **OK** | `lunr()` convenience API with default pipeline (trimmer → stopWordFilter → stemmer) and searchPipeline (stemmer) |
 | `document` | OK | Lifetime `'a` removed |
 | `set` | **OK** | `Empty`, `Complete`, `Elements` variants; `union()`, `intersect()`, `contains()` |
 | `idf` | **OK** | Standalone `idf(posting, document_count)`, shared by builder & index |

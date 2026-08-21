@@ -20,6 +20,24 @@ pub mod query_parse_error;
 pub mod query_parser;
 pub mod utils;
 
+use builder::Builder;
+use index::Index;
+use pipeline::PipelineFunction;
+
+pub fn lunr(config: impl FnOnce(&mut Builder)) -> Index {
+    let mut builder = Builder::default();
+
+    builder.pipeline.add_function(PipelineFunction::Trimmer);
+    builder.pipeline.add_function(PipelineFunction::StopWordFilter);
+    builder.pipeline.add_function(PipelineFunction::Stemmer);
+
+    builder.search_pipeline.add_function(PipelineFunction::Stemmer);
+
+    config(&mut builder);
+
+    Index::from(builder)
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
