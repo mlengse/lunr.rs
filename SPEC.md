@@ -6,7 +6,7 @@
 | **Target** | lunr.js v2.3.9 compatible index output |
 | **Rust edition** | 2021 |
 | **License** | MIT |
-| **Status** | Proof of concept — partial implementation |
+| **Status** | Proof of concept — Phases 1-7 complete, 69 tests |
 
 This document is the **source of truth** for lunr.rs behavior. All implementation
 decisions must conform to this spec. Deviations require spec updates first.
@@ -50,28 +50,27 @@ Out of scope:
 
 ```
 src/
-├── lib.rs               # Module declarations + re-exports
+├── lib.rs               # Module declarations + lunr() factory
 ├── utils.rs             # warn, as_string, clone
-├── field_ref.rs         # FieldRef (joiner "/", fromString, serialize)
+├── field_ref.rs         # FieldRef (joiner "/", fromString, serialize, Display)
 ├── set.rs               # Set (Empty, Complete, union, intersect, contains)
 ├── idf.rs               # idf(posting, document_count) -> f64
 ├── token.rs             # Token (term, metadata, update, clone) + Tokens
 ├── tokenizer.rs         # tokenizer(obj, metadata) -> Vec<Token>
-├── pipeline.rs          # Pipeline (register, run, runString, load, save)
-├── vector.rs            # Vector (insert, upsert, dot, magnitude, similarity)
+├── pipeline.rs          # Pipeline + PipelineFunction enum (Trimmer, StopWordFilter, Stemmer)
+├── vector.rs            # Vector (BTreeMap, insert, upsert, dot, magnitude, similarity)
 ├── stemmer.rs           # Porter stemmer (English, default)
 ├── stop_word_filter.rs  # Stop word filter (English, default)
 ├── trimmer.rs           # Trimmer + wordCharacters constant
-├── token_set.rs         # TokenSet DAG (fromString, fromArray, intersect, toArray)
-├── token_set_builder.rs # TokenSet.Builder (minimized DAG, suffix sharing)
+├── token_set.rs         # TokenSet DAG (fromString, fromArray, intersect, toArray) + Builder
 ├── inverted_index.rs    # InvertedIndex + Posting + FieldPosting
 ├── match_data.rs        # MatchData (add, combine)
-├── query.rs             # Query + Clause + presence + wildcard constants
+├── query.rs             # Query + Clause + ClauseOptions + Presence + wildcard constants
 ├── query_parse_error.rs # QueryParseError (name, message, start, end)
-├── query_lexer.rs       # QueryLexer (lexText, lexField, lexTerm, lexEditDistance, lexBoost)
-├── query_parser.rs      # QueryParser (parse, parseClause, parsePresence, ...)
-├── builder.rs           # Builder (add, field, build, BM25 params)
-├── index.rs             # Index (search, query, toJSON, load)
+├── query_lexer.rs       # QueryLexer (state-machine, Option<StateId> termination)
+├── query_parser.rs      # QueryParser (recursive-descent, field validation)
+├── builder.rs           # Builder + FieldOpts (add, field, build, BM25, b/k1, search_pipeline)
+├── index.rs             # Index + SearchResult (search, query, load, search_pipeline)
 └── document.rs          # Document trait + Field struct
 ```
 
@@ -92,8 +91,8 @@ src/
 
 - **Index pipeline** (used during `Builder::add`): `trimmer → stopWordFilter → stemmer`.
 - **Search pipeline** (used during `Index::query`): `stemmer`.
-- Pipeline is a `Vec<Box<dyn PipelineFunction>>`.
-- `PipelineFunction` trait: `fn run(&self, token: Token) -> Option<Token>` or `Vec<Token>`.
+- Pipeline is a `PipelineFunction` enum (`Trimmer`, `StopWordFilter`, `Stemmer`).
+- Enum dispatch for Clone-safe, no trait objects needed.
 - Returning `None` skips the token; returning `Vec<Token>` expands (term expansion).
 - Registered functions have labels for serialization.
 
@@ -181,7 +180,7 @@ score = idf * (tf * (k1 + 1.0))
 - `upsert(index, val, fn)` — insert or merge with function.
 - `position_for_index(index)` — binary search.
 - `dot(other)` — dot product (merge-join on sorted keys).
-- `magnitude()` — lazy-cached with `Option<f64>` sentinel (`None` = not computed).
+- `magnitude()` — lazy-cached with `Cell<Option<f64>>` for interior mutability (`&self` on `similarity()`).
 - `similarity(other)` — `self.dot(other) / self.magnitude() || 0.0`.
 
 ---
@@ -219,19 +218,20 @@ impl Builder {
 
 ```rust
 impl Index {
-    pub fn search(&self, query: &str) -> Vec<Result>;          // parse query → query
-    pub fn query(&self, f: impl FnOnce(&mut Query)) -> Vec<Result>; // programmatic query
-    pub fn to_json(&self) -> String;                           // serialize to lunr.js format
-    pub fn load(json: &str) -> Result<Index, Error>;           // deserialize + validate
+    pub fn search(&mut self, query: &str) -> Vec<SearchResult>;          // parse query → query
+    pub fn query(&mut self, query: Query) -> Vec<SearchResult>;          // programmatic query
+    pub fn to_json(&self) -> String;                                     // serialize to lunr.js format
+    pub fn load(json: &serde_json::Value) -> Result<Index, String>;      // deserialize + validate
     pub fields: Vec<String>;
     pub pipeline: Pipeline;
+    pub search_pipeline: Pipeline;
 }
 ```
 
-### 7.4 Result
+### 7.4 SearchResult
 
 ```rust
-pub struct Result {
+pub struct SearchResult {
     pub ref_: String,
     pub score: f64,
     pub match_data: MatchData,
@@ -310,7 +310,8 @@ Parser rules:
       "body": { "docRef": { "position": [[12, 5]] } }
     }]
   ],
-  "pipeline": ["trimmer", "stopWordFilter", "stemmer"]
+  "pipeline": ["trimmer", "stopWordFilter", "stemmer"],
+  "searchPipeline": ["stemmer"]
 }
 ```
 
@@ -318,11 +319,13 @@ Parser rules:
 - `fields`: ordered `Vec<String>` (insertion order).
 - `fieldVectors`: `Vec<(FieldRef, Vector)>` serialized as flat `[index, value, ...]`.
 - `invertedIndex`: sorted by term, `Vec<(Term, Posting)>`.
-- `pipeline`: labels of registered functions in the search pipeline.
+- `pipeline`: labels of registered functions in the index pipeline.
+- `searchPipeline`: labels of registered functions in the search pipeline.
 
 ### 9.2 `Index::load` Validation
 
 - `fieldVectors`, `invertedIndex`, `fields`, `pipeline` must be arrays.
+- `searchPipeline` is optional (defaults to empty).
 - Each `fieldVectors` entry must be `[string, array]`.
 - Each `invertedIndex` entry must be `[string, object]`.
 - Version mismatch → warning (not error).
@@ -375,14 +378,14 @@ lunr.js has 540 tests across: `builder`, `field_ref`, `idf`, `index`, `lunr`,
 
 ## 12. Design Constraints
 
-- **Minimal dependencies**: `serde`, `serde_json`, `erased-serde` only.
+- **Minimal dependencies**: `serde`, `serde_json` only. `erased-serde` listed but unused.
 - **No `unsafe`** — pure safe Rust.
 - **Wire compatibility** — output must be loadable by lunr.js v2.3.9.
 - **Error types** — use `thiserror` or manual `Display`/`Error` impls.
-- **Pipeline** — trait objects (`Box<dyn PipelineFunction>`) for dynamic dispatch.
+- **Pipeline** — `PipelineFunction` enum (Trimmer, StopWordFilter, Stemmer), Clone-safe via enum dispatch.
 - **NFC normalization** — in tokenizer, not pipeline.
 - **`TokenSet::intersect`** — no memoization (soundness requirement, see lunr.js audit).
-- **`Vector::magnitude`** — `Option<f64>` sentinel, not `0.0`.
+- **`Vector::magnitude`** — `Cell<Option<f64>>` cache, interior mutability for `&self` on `similarity()`.
 - **All maps iterated** — use `BTreeMap` or `HashMap` (no `Object.create(null)` equivalent needed; Rust types are safe).
 
 ---
@@ -391,11 +394,11 @@ lunr.js has 540 tests across: `builder`, `field_ref`, `idf`, `index`, `lunr`,
 
 | Module | Status | Notes |
 |---|---|---|
-| `field_ref` | Partial | `fromString` added, `JOINER` const |
+| `field_ref` | **OK** | `fromString`, `JOINER` const, `Display` impl, `to_ref_string()` |
 | `token` | **OK** | `update()`, `clone()`, `clone_with()`, `Display`. `Metadata` = `serde_json::Value` |
 | `tokenizer` | Partial | Split on whitespace+hyphens with position metadata. No NFC (deferred), no separator config |
 | `vector` | **OK** | `BTreeMap` sparse vector with `insert`, `upsert`, `dot`, `magnitude` (Cell-cached), `similarity` (asymmetric). `from_elements` for deserialization |
-| `inverted_index` | Partial | Correct shape, `document_count()`, `terms()`, `field_posting()`, `add_posting_raw()` for load |
+| `inverted_index` | **OK** | Correct shape, `document_count()`, `terms()`, `field_posting()`, `add_posting_raw()` for load. `FieldPosting` public |
 | `builder` | **OK** | IDF + BM25 correct, shared idf module, validation added, pipeline wired. `field()` with `FieldOpts`, `b()`/`k1()` setters, `search_pipeline` |
 | `index` | **OK** | Serialization + `search()`, `query()`, `load()`, TokenSet integration, `search_pipeline`. Builds token_set from terms |
 | `lunr` (factory) | **OK** | `lunr()` convenience API with default pipeline (trimmer → stopWordFilter → stemmer) and searchPipeline (stemmer) |

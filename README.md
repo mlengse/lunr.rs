@@ -19,17 +19,18 @@ in JavaScript.
 - **Serialization** — JSON output matching lunr.js v2.3.9 format.
 - **Load** — deserialize JSON index back into a searchable Index.
 - **TokenSet** — DAG for wildcard and fuzzy matching with minimization.
-- **63 unit tests** across all modules.
+- **69 unit tests** across all modules.
 
 ### What's not done
 
-- [ ] `lunr()` factory function (convenience API)
-- [ ] `Builder::field()` with per-field boost and extractor config
-- [ ] `Builder::b()` / `k1()` setters for BM25 parameters
-- [ ] Separate `searchPipeline` (lunr.js uses just stemmer for search)
+- [ ] `Builder::use_plugin()` plugin system
+- [ ] `Builder::ref_field()` for custom document ref field
 - [ ] Integration tests (build → serialize → load → search → compare with lunr.js)
+- [ ] `SearchResult` Serialize impl for JSON output
 - [ ] NFC normalization (deferred, no `unicode-normalization` dep)
 - [ ] Configurable tokenizer separator
+- [ ] `FieldOpts` extractor for nested documents
+- [ ] Doc boost in Document trait
 - [ ] Non-English stemmer plugin architecture
 
 ## Example
