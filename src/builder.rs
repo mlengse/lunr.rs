@@ -89,7 +89,14 @@ impl Builder {
 
         for field in document.fields() {
             let field_ref = FieldRef::new(doc_ref.clone(), field.name.to_owned());
-            let tokens: Tokens = field.text.into();
+            let text = self
+                .field_configs
+                .iter()
+                .find(|f| f.name == field.name)
+                .and_then(|f| f.extractor)
+                .map(|ext| ext(&field))
+                .unwrap_or(field.text);
+            let tokens: Tokens = text.into();
             let field_length = tokens.len();
 
             if !self.fields.contains(&field.name) {
@@ -260,6 +267,24 @@ mod tests {
         let mut b = Builder::default();
         b.field("text", FieldOpts::default());
         b.field("text", FieldOpts::default());
+    }
+
+    #[test]
+    fn extractor_overrides_field_text() {
+        let mut b = Builder::default();
+        b.field(
+            "text",
+            FieldOpts { boost: 1.0, extractor: Some(|f: &Field| f.text.to_uppercase()) },
+        );
+        // "hello" lowercased by pipeline; extractor uppercases first so only
+        // the extracted text "WORLD WORLD" is indexed -> term "world".
+        b.add(doc("a", "hello world world"));
+        b.build();
+
+        let mut index = crate::index::Index::from(b);
+        let results = index.search("world");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].ref_, "a");
     }
 
     #[test]

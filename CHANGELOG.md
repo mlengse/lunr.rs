@@ -10,7 +10,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Parity 1:1 Achievement (2026-08-23)
 
-All 72 tests pass (69 unit + 3 integration). 1:1 parity with lunr.js v2.3.9 achieved.
+All 73 tests pass (70 unit + 3 integration). 1:1 parity with lunr.js v2.3.9 achieved.
 
 #### Fixed
 
@@ -34,12 +34,13 @@ All 72 tests pass (69 unit + 3 integration). 1:1 parity with lunr.js v2.3.9 achi
 - **`tests/parity.rs`** — Updated to use Cluedo documents (3 docs, title+body fields).
   All 3 integration tests now pass.
 - **`src/document.rs`** — Added `boost: f64` to `Field`, `boost()` default to `Document`.
-- **`src/builder.rs`** — Added `ref_field()`, `FieldOpts::extractor`.
+- **`src/builder.rs`** — Added `ref_field()`, `FieldOpts::extractor`; extractor
+  now wired into `add()` (overrides field text when present, matching
+  lunr.js `extractor(doc)` behavior).
 - **`src/index.rs`** — Added `Serialize` impl for `SearchResult`.
 
 #### Remaining
 
-- Wire `FieldOpts` extractor into `add()` (field defined, not yet applied).
 - Full `Builder::ref_field()` integration.
 
 ---
