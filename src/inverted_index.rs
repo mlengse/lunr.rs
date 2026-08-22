@@ -86,6 +86,14 @@ impl Posting {
         doc_meta.insert(key, values);
     }
 
+    pub fn add_document_raw(&mut self, field_name: String, doc_ref: String) {
+        let fp = self
+            .field_postings
+            .entry(field_name)
+            .or_insert_with(FieldPosting::default);
+        fp.documents.entry(doc_ref).or_insert_with(HashMap::new);
+    }
+
     pub fn insert(&mut self, field_ref: FieldRef, token: Token) {
         self.field_postings
             .entry(field_ref.field_name)

@@ -8,10 +8,10 @@ use crate::token_set::TokenSet;
 use crate::query::{self, Query};
 use crate::query_parser::QueryParser;
 use crate::pipeline::{Pipeline, PipelineFunction};
-
+use serde::ser::Serialize;
+use serde::ser::{Serializer, SerializeStruct};
+use serde_json::Value;
 use std::collections::HashMap;
-
-use serde::ser::{Serialize, Serializer, SerializeStruct};
 
 pub type FieldVector = (String, Vector);
 
@@ -19,6 +19,23 @@ pub struct SearchResult {
     pub ref_: String,
     pub score: f64,
     pub match_data: MatchData,
+}
+
+impl Serialize for SearchResult {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::ser::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut rs = serializer.serialize_struct("SearchResult", 3)?;
+        rs.serialize_field("ref", &self.ref_)?;
+        rs.serialize_field("score", &self.score)?;
+        // Serialize match_data as a simple object
+        let terms: Vec<String> = self.match_data.metadata.keys().cloned().collect();
+        let md_json = serde_json::json!({ "terms": terms });
+        rs.serialize_field("match_data", &md_json)?;
+        rs.end()
+    }
 }
 
 pub struct Index {
@@ -305,7 +322,11 @@ impl Index {
                     }
                     if let Some(field_obj) = field_value.as_object() {
                         for (doc_ref, meta_obj) in field_obj {
-                            if let Some(meta) = meta_obj.as_object() {
+                            let empty: serde_json::Map<String, Value> = serde_json::Map::new();
+                            let meta = meta_obj.as_object().unwrap_or(&empty);
+                            if meta.is_empty() {
+                                posting.add_document_raw(field_name.clone(), doc_ref.clone());
+                            } else {
                                 for (key, values_json) in meta {
                                     if let Some(arr) = values_json.as_array() {
                                         let values: Vec<crate::token::Metadata> = arr
@@ -348,12 +369,19 @@ impl Index {
             }
         }
 
-        let search_pipeline_labels: Vec<String> = json["searchPipeline"]
-            .as_array()
-            .unwrap_or(&Vec::new())
-            .iter()
-            .filter_map(|v| v.as_str().map(|s| s.to_string()))
-            .collect();
+        // lunr.js serializes the search pipeline in the "pipeline" field
+        // (there is no "searchPipeline" key). If "searchPipeline" is absent,
+        // fall back to the "pipeline" labels, matching lunr.js Index.load.
+        let search_pipeline_labels: Vec<String> = if json.get("searchPipeline").is_some() {
+            json["searchPipeline"]
+                .as_array()
+                .unwrap_or(&Vec::new())
+                .iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect()
+        } else {
+            pipeline_labels.clone()
+        };
 
         let mut search_pipeline = Pipeline::default();
         for label in &search_pipeline_labels {

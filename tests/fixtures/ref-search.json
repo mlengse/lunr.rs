@@ -1,0 +1,293 @@
+{
+  "results": [
+    {
+      "query": "scarlett",
+      "results": [
+        {
+          "ref": "c",
+          "score": 0.946,
+          "terms": [
+            "scarlett"
+          ]
+        }
+      ]
+    },
+    {
+      "query": "plant",
+      "results": [
+        {
+          "ref": "b",
+          "score": 0.309,
+          "terms": [
+            "plant"
+          ]
+        },
+        {
+          "ref": "c",
+          "score": 0.124,
+          "terms": [
+            "plant"
+          ]
+        }
+      ]
+    },
+    {
+      "query": "professor",
+      "results": [
+        {
+          "ref": "c",
+          "score": 0.268,
+          "terms": [
+            "professor"
+          ]
+        },
+        {
+          "ref": "b",
+          "score": 0.165,
+          "terms": [
+            "professor"
+          ]
+        }
+      ]
+    },
+    {
+      "query": "candlestick green",
+      "results": [
+        {
+          "ref": "a",
+          "score": 0.7806458864299484,
+          "terms": [
+            "candlestick",
+            "green"
+          ]
+        },
+        {
+          "ref": "b",
+          "score": 0.09192388155425117,
+          "terms": [
+            "green"
+          ]
+        },
+        {
+          "ref": "c",
+          "score": 0.06929646455628166,
+          "terms": [
+            "green"
+          ]
+        }
+      ]
+    },
+    {
+      "query": "water",
+      "results": [
+        {
+          "ref": "b",
+          "score": 0.508,
+          "terms": [
+            "water"
+          ]
+        },
+        {
+          "ref": "c",
+          "score": 0.438,
+          "terms": [
+            "water"
+          ]
+        }
+      ]
+    },
+    {
+      "query": "title:plant",
+      "results": [
+        {
+          "ref": "b",
+          "score": 0.144,
+          "terms": [
+            "plant"
+          ]
+        }
+      ]
+    },
+    {
+      "query": "candle*",
+      "results": [
+        {
+          "ref": "a",
+          "score": 0.878,
+          "terms": [
+            "candlestick"
+          ]
+        }
+      ]
+    },
+    {
+      "query": "pl*",
+      "results": [
+        {
+          "ref": "b",
+          "score": 0.4369919907732863,
+          "terms": [
+            "plumb",
+            "plant"
+          ]
+        },
+        {
+          "ref": "c",
+          "score": 0.17536248173426378,
+          "terms": [
+            "plumb",
+            "plant"
+          ]
+        }
+      ]
+    },
+    {
+      "query": "*ant",
+      "results": [
+        {
+          "ref": "b",
+          "score": 0.309,
+          "terms": [
+            "plant"
+          ]
+        },
+        {
+          "ref": "c",
+          "score": 0.124,
+          "terms": [
+            "plant"
+          ]
+        }
+      ]
+    },
+    {
+      "query": "pl*nt",
+      "results": [
+        {
+          "ref": "b",
+          "score": 0.309,
+          "terms": [
+            "plant"
+          ]
+        },
+        {
+          "ref": "c",
+          "score": 0.124,
+          "terms": [
+            "plant"
+          ]
+        }
+      ]
+    },
+    {
+      "query": "plont~1",
+      "results": [
+        {
+          "ref": "b",
+          "score": 0.309,
+          "terms": [
+            "plant"
+          ]
+        },
+        {
+          "ref": "c",
+          "score": 0.124,
+          "terms": [
+            "plant"
+          ]
+        }
+      ]
+    },
+    {
+      "query": "title:candlestick",
+      "results": []
+    },
+    {
+      "query": "scarlett candlestick^5",
+      "results": [
+        {
+          "ref": "a",
+          "score": 0.8609498332566279,
+          "terms": [
+            "candlestick"
+          ]
+        },
+        {
+          "ref": "c",
+          "score": 0.18552586384072212,
+          "terms": [
+            "scarlett"
+          ]
+        }
+      ]
+    },
+    {
+      "query": "foo",
+      "results": []
+    },
+    {
+      "query": "foo bar",
+      "results": []
+    },
+    {
+      "query": "+candlestick green",
+      "results": [
+        {
+          "ref": "a",
+          "score": 0.7806458864299484,
+          "terms": [
+            "candlestick",
+            "green"
+          ]
+        }
+      ]
+    },
+    {
+      "query": "-candlestick green",
+      "results": [
+        {
+          "ref": "b",
+          "score": 0.13,
+          "terms": [
+            "green"
+          ]
+        },
+        {
+          "ref": "c",
+          "score": 0.098,
+          "terms": [
+            "green"
+          ]
+        }
+      ]
+    },
+    {
+      "query": "green study^10",
+      "results": [
+        {
+          "ref": "b",
+          "score": 0.5900570537945236,
+          "terms": [
+            "green",
+            "studi"
+          ]
+        },
+        {
+          "ref": "a",
+          "score": 0.4413984975771512,
+          "terms": [
+            "green",
+            "studi"
+          ]
+        },
+        {
+          "ref": "c",
+          "score": 0.009751364464057895,
+          "terms": [
+            "green"
+          ]
+        }
+      ]
+    }
+  ]
+}

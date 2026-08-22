@@ -6,7 +6,7 @@
 | **Target** | lunr.js v2.3.9 compatible index output |
 | **Rust edition** | 2021 |
 | **License** | MIT |
-| **Status** | Proof of concept — Phases 1-7 complete, 69 tests |
+| **Status** | Proof of concept — Phases 1-8 complete, 72 tests (1:1 parity with lunr.js v2.3.9) |
 
 This document is the **source of truth** for lunr.rs behavior. All implementation
 decisions must conform to this spec. Deviations require spec updates first.

@@ -1,4 +1,4 @@
-use crate::document::Document;
+use crate::document::{Document, Field};
 use crate::field_ref::FieldRef;
 use crate::idf;
 use crate::inverted_index::InvertedIndex;
@@ -10,11 +10,12 @@ use std::collections::{HashMap, HashSet};
 
 pub struct FieldOpts {
     pub boost: f64,
+    pub extractor: Option<fn(&Field) -> String>,
 }
 
 impl Default for FieldOpts {
     fn default() -> Self {
-        FieldOpts { boost: 1.0 }
+        FieldOpts { boost: 1.0, extractor: None }
     }
 }
 
@@ -25,6 +26,7 @@ pub fn create() -> Builder {
 struct FieldConfig {
     name: String,
     boost: f64,
+    extractor: Option<fn(&Field) -> String>,
 }
 
 pub struct Builder {
@@ -39,6 +41,8 @@ pub struct Builder {
     field_lengths: HashMap<FieldRef, usize>,
     field_refs: Vec<FieldRef>,
     document_refs: HashSet<String>,
+
+    average_field_length: HashMap<String, f64>,
 
     k1: f64,
     b: f64,
@@ -57,6 +61,7 @@ impl Default for Builder {
             field_lengths: HashMap::new(),
             field_refs: Vec::new(),
             document_refs: HashSet::new(),
+            average_field_length: HashMap::new(),
             k1: 1.2,
             b: 0.75,
         }
@@ -71,6 +76,7 @@ impl Builder {
         self.field_configs.push(FieldConfig {
             name: name.to_string(),
             boost: opts.boost,
+            extractor: opts.extractor,
         });
     }
 
@@ -114,8 +120,8 @@ impl Builder {
         assert!(!self.field_refs.is_empty(),
             "cannot build index with no documents");
 
-        let avg_field_length = self.calculate_average_field_length();
-        let document_count = self.field_lengths.len();
+        self.calculate_average_field_lengths();
+        let document_count = self.document_refs.len();
 
         for field_ref in &self.field_refs {
             let mut vector: Vector = Default::default();
@@ -129,13 +135,20 @@ impl Builder {
                 .map(|f| f.boost)
                 .unwrap_or(1.0);
 
+            let avg_field_length = *self.average_field_length
+                .get(&field_ref.field_name)
+                .expect("average field length missing");
+
             for term in term_frequencies.keys() {
                 let tf = f64::from(*term_frequencies.get(term).expect("token frequency missing"));
                 let posting = self.inverted_index.posting(term).expect("posting missing");
                 let idf = idf::idf(posting, document_count);
-                let score = idf * (tf * (self.k1 + 1.0))
-                    / (tf + self.k1 * (1.0 - self.b + self.b * field_length as f64 / avg_field_length))
+                let score = idf * ((self.k1 + 1.0) * tf)
+                    / (self.k1 * (1.0 - self.b + self.b * field_length as f64 / avg_field_length) + tf)
                     * field_boost;
+
+                // Round to 3 decimal places to match lunr.js serialized output
+                let score = (score * 1000.0).round() / 1000.0;
 
                 vector.insert(posting.index as u32, score);
             }
@@ -144,12 +157,20 @@ impl Builder {
         }
     }
 
-    fn calculate_average_field_length(&self) -> f64 {
-        if self.field_lengths.is_empty() {
-            return 0.0;
+    fn calculate_average_field_lengths(&mut self) {
+        let mut field_lengths_sum: HashMap<String, usize> = HashMap::new();
+        let mut field_counts: HashMap<String, usize> = HashMap::new();
+
+        for (field_ref, len) in &self.field_lengths {
+            *field_lengths_sum.entry(field_ref.field_name.clone()).or_insert(0) += len;
+            *field_counts.entry(field_ref.field_name.clone()).or_insert(0) += 1;
         }
-        let total: usize = self.field_lengths.values().sum();
-        total as f64 / self.field_lengths.len() as f64
+
+        for (field, total) in field_lengths_sum {
+            let count = *field_counts.get(&field).unwrap_or(&0);
+            let avg = if count == 0 { 0.0 } else { total as f64 / count as f64 };
+            self.average_field_length.insert(field, avg);
+        }
     }
 
     pub fn b(&mut self, n: f64) {
@@ -174,7 +195,7 @@ mod tests {
     impl Document for TestDoc {
         fn id(&self) -> String { self.id.clone() }
         fn fields(&self) -> Vec<Field> {
-            vec![Field { name: "text".into(), text: self.text.clone() }]
+            vec![Field { name: "text".into(), text: self.text.clone(), boost: 1.0 }]
         }
     }
 
@@ -212,13 +233,13 @@ mod tests {
     #[test]
     fn field_boost_applied() {
         let mut b1 = Builder::default();
-        b1.field("text", FieldOpts { boost: 1.0 });
+        b1.field("text", FieldOpts { boost: 1.0, extractor: None });
         b1.add(doc("a", "hello world"));
         b1.add(doc("b", "hello there"));
         b1.build();
 
         let mut b2 = Builder::default();
-        b2.field("text", FieldOpts { boost: 2.0 });
+        b2.field("text", FieldOpts { boost: 2.0, extractor: None });
         b2.add(doc("a", "hello world"));
         b2.add(doc("b", "hello there"));
         b2.build();
@@ -227,7 +248,9 @@ mod tests {
         let arr2 = b2.field_vectors.values().next().unwrap().to_array();
         assert_eq!(arr1.len(), arr2.len());
         for (v1, v2) in arr1.iter().zip(arr2.iter()) {
-            assert!((v2 - v1 * 2.0).abs() < 1e-10, "boost 2x should double score");
+            // With 3-decimal rounding (matching lunr.js), 2x boost is not exact.
+            // Allow rounding tolerance of 0.001 on both values.
+            assert!((v2 - v1 * 2.0).abs() <= 0.002, "boost 2x should roughly double score");
         }
     }
 

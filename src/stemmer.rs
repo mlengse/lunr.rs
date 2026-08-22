@@ -153,9 +153,13 @@ impl PorterStemmer {
     }
 
     fn step1c(&self, w: &str) -> String {
-        if w.ends_with('y') && w.len() > 2 {
-            let stem = &w[..w.len()-1];
-            if self.contains_vowel(stem) {
+        // Porter: replace suffix y by i if preceded by a non-vowel which is
+        // not the first letter of the word (cry -> cri, by -> by, say -> say)
+        // lunr.js regex: /^(.+?[^aeiou])y$/ — char before y must not be aeiou.
+        if w.len() > 2 && w.ends_with('y') {
+            let before_y = w.chars().nth(w.len() - 2).unwrap();
+            if !matches!(before_y, 'a' | 'e' | 'i' | 'o' | 'u') {
+                let stem = &w[..w.len()-1];
                 format!("{}i", stem)
             } else {
                 w.to_string()

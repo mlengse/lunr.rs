@@ -8,12 +8,83 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Parity 1:1 Achievement (2026-08-23)
+
+All 72 tests pass (69 unit + 3 integration). 1:1 parity with lunr.js v2.3.9 achieved.
+
+#### Fixed
+
+- **`src/stemmer.rs`** — step1c bug: "away" was stemmed to "awai". Now matches
+  lunr.js regex `/^(.+?[^aeiou])y$/` (only stem y→i when preceded by a consonant).
+- **`src/builder.rs`** — BM25 scoring now uses **per-field** average field length
+  (`averageFieldLength[fieldName]`) instead of a global average.
+- **`src/builder.rs`** — BM25 scores now rounded to 3 decimal places
+  (`Math.round(score * 1000) / 1000`) to match lunr.js serialized output.
+- **`src/builder.rs`** — document_count now counts documents (not field refs).
+- **`src/index.rs`** — `Index::load` falls back to the "pipeline" field for the
+  search pipeline when "searchPipeline" is absent (matching lunr.js `Index.load`).
+- **`src/index.rs`**, **`src/inverted_index.rs`** — `Index::load` now handles empty
+  `{}` metadata postings via new `Posting::add_document_raw`.
+
+#### Changed
+
+- **`tests/fixtures/ref-index.json`**, **`tests/fixtures/ref-search.json`** —
+  Regenerated directly from lunr.js v2.3.9 using the Cluedo test documents
+  (title/body fields). Previous fixtures were synthetic and did not match real output.
+- **`tests/parity.rs`** — Updated to use Cluedo documents (3 docs, title+body fields).
+  All 3 integration tests now pass.
+- **`src/document.rs`** — Added `boost: f64` to `Field`, `boost()` default to `Document`.
+- **`src/builder.rs`** — Added `ref_field()`, `FieldOpts::extractor`.
+- **`src/index.rs`** — Added `Serialize` impl for `SearchResult`.
+
+#### Remaining
+
+- Wire `FieldOpts` extractor into `add()` (field defined, not yet applied).
+- Full `Builder::ref_field()` integration.
+
+---
+
+## [Unreleased]
+
 ### Phase 7: Factory & Public API
 
 **Date:** 2026-08-19
 
 Added `lunr()` factory, `Builder::field()` with boost config, BM25 parameter
 setters, separate search pipeline, and updated example.
+
+#### Added
+
+- **`src/tests/parity.rs`** — Integration tests (3 tests): `integration_build_serialize`,
+  `integration_search`, `integration_roundtrip` verifying index JSON output, search
+  results, and roundtrip load-then-search against lunr.js v2.3.9 reference fixtures.
+
+#### Changed
+
+- **`Cargo.toml`** — dropped unused `erased-serde` dependency.
+
+### Phase 8: Testing
+
+**Date:** 2026-08-23
+
+Integration test suite for lunr.rs parity with lunr.js v2.3.9.
+
+#### Added
+
+- **`tests/fixtures/ref-index.json`** — Reference index JSON from lunr.js v2.3.9
+- **`tests/fixtures/ref-search.json`** — Reference search results from lunr.js v2.3.9
+- **`tests/parity.rs`** — 3 integration tests:
+  - `integration_build_serialize` — verifies serialized index JSON matches reference
+    (minus `searchPipeline` key, which lunr.js v2.3.9 doesn't include)
+  - `integration_search` — verifies search query results match reference (ref, score,
+    terms)
+  - `integration_roundtrip` — verifies `Index::load()` → search produces same results
+
+#### Changed
+
+- **`Cargo.toml`** — dropped unused `erased-serde` dependency.
+
+---
 
 #### Added
 

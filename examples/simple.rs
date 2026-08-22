@@ -16,6 +16,7 @@ impl Document for Quote {
         vec![Field {
                  name: String::from("text"),
                  text: self.text.to_owned(),
+                 boost: 1.0,
              }]
     }
 }
