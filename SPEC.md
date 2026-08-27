@@ -6,7 +6,7 @@
 | **Target** | lunr.js v2.3.9 compatible index output |
 | **Rust edition** | 2021 |
 | **License** | MIT |
-| **Status** | Proof of concept — Phases 1-8 complete, 73 tests (1:1 parity with lunr.js v2.3.9) |
+| **Status** | Proof of concept — Phases 1-8 complete, 78 tests. Core wire-format parity with lunr.js v2.3.9; `use_plugin()` and `ref_field()` implemented, NFC & separator config outstanding |
 
 This document is the **source of truth** for lunr.rs behavior. All implementation
 decisions must conform to this spec. Deviations require spec updates first.
@@ -55,8 +55,7 @@ src/
 ├── field_ref.rs         # FieldRef (joiner "/", fromString, serialize, Display)
 ├── set.rs               # Set (Empty, Complete, union, intersect, contains)
 ├── idf.rs               # idf(posting, document_count) -> f64
-├── token.rs             # Token (term, metadata, update, clone) + Tokens
-├── tokenizer.rs         # tokenizer(obj, metadata) -> Vec<Token>
+├── token.rs             # Token (term, metadata, update, clone) + Tokens + tokenizer (NFC, separator, position)
 ├── pipeline.rs          # Pipeline + PipelineFunction enum (Trimmer, StopWordFilter, Stemmer)
 ├── vector.rs            # Vector (BTreeMap, insert, upsert, dot, magnitude, similarity)
 ├── stemmer.rs           # Porter stemmer (English, default)
@@ -207,7 +206,7 @@ impl Builder {
     pub fn build(&mut self) -> Index;                   // calculateAverageFieldLengths + createFieldVectors + createTokenSet
     pub fn b(&mut self, n: f64);                        // BM25 b param (clamped 0..=1)
     pub fn k1(&mut self, n: f64);                      // BM25 k1 param (clamped >= 0)
-    pub fn use_plugin(&mut self, fn: impl Fn(&mut Builder)); // plugin
+    pub fn use_plugin(&mut self, fn: impl FnOnce(&mut Builder)); // plugin
     pub fn pipeline: Pipeline;                          // index pipeline
     pub fn search_pipeline: Pipeline;                   // search pipeline
     pub fn tokenizer: fn(...) -> Vec<Token>;            // configurable tokenizer
@@ -399,10 +398,10 @@ lunr.js has 540 tests across: `builder`, `field_ref`, `idf`, `index`, `lunr`,
 | `tokenizer` | Partial | Split on whitespace+hyphens with position metadata. No NFC (deferred), no separator config |
 | `vector` | **OK** | `BTreeMap` sparse vector with `insert`, `upsert`, `dot`, `magnitude` (Cell-cached), `similarity` (asymmetric). `from_elements` for deserialization |
 | `inverted_index` | **OK** | Correct shape, `document_count()`, `terms()`, `field_posting()`, `add_posting_raw()` for load. `FieldPosting` public |
-| `builder` | **OK** | IDF + BM25 correct, shared idf module, validation added, pipeline wired. `field()` with `FieldOpts`, `b()`/`k1()` setters, `search_pipeline` |
+| `builder` | **OK** | IDF + BM25 correct, shared idf module, validation added, pipeline wired. `field()` with `FieldOpts`, `b()`/`k1()` setters, `search_pipeline`, `use_plugin()`, `ref_field()` (default "id") |
 | `index` | **OK** | Serialization + `search()`, `query()`, `load()`, TokenSet integration, `search_pipeline`. Builds token_set from terms |
 | `lunr` (factory) | **OK** | `lunr()` convenience API with default pipeline (trimmer → stopWordFilter → stemmer) and searchPipeline (stemmer) |
-| `document` | OK | Lifetime `'a` removed |
+| `document` | OK | Lifetime `'a` removed. `boost()` present (default 1.0) |
 | `set` | **OK** | `Empty`, `Complete`, `Elements` variants; `union()`, `intersect()`, `contains()` |
 | `idf` | **OK** | Standalone `idf(posting, document_count)`, shared by builder & index |
 | `pipeline` | **OK** | `Pipeline` with `PipelineFunction` enum (`Trimmer`, `StopWordFilter`, `Stemmer`). `run()`, `run_string()`, `to_json()`. Clone-safe via enum dispatch |

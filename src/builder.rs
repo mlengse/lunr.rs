@@ -42,6 +42,8 @@ pub struct Builder {
     field_refs: Vec<FieldRef>,
     document_refs: HashSet<String>,
 
+    ref_field: String,
+
     average_field_length: HashMap<String, f64>,
 
     k1: f64,
@@ -61,6 +63,7 @@ impl Default for Builder {
             field_lengths: HashMap::new(),
             field_refs: Vec::new(),
             document_refs: HashSet::new(),
+            ref_field: "id".to_string(),
             average_field_length: HashMap::new(),
             k1: 1.2,
             b: 0.75,
@@ -80,10 +83,19 @@ impl Builder {
         });
     }
 
+    pub fn ref_field(&mut self, field: &str) {
+        assert!(!field.is_empty(), "ref field name cannot be empty");
+        self.ref_field = field.to_string();
+    }
+
+    pub fn use_plugin(&mut self, plugin: impl FnOnce(&mut Self)) {
+        plugin(self);
+    }
+
     pub fn add<T: Document>(&mut self, document: T) {
         let doc_ref = document.id();
         assert!(!doc_ref.is_empty(),
-            "cannot add a document without a 'ref' field to the index");
+            "cannot add a document without a '{}' field to the index", self.ref_field);
         assert!(self.document_refs.insert(doc_ref.clone()),
             "cannot add a document with a duplicate ref '{}'", doc_ref);
 
@@ -295,5 +307,43 @@ mod tests {
         });
         assert_eq!(index.search_pipeline.to_json(), vec!["stemmer"]);
         assert_eq!(index.pipeline.to_json(), vec!["trimmer", "stopWordFilter", "stemmer"]);
+    }
+
+    #[test]
+    fn ref_field_defaults_to_id() {
+        let builder = Builder::default();
+        assert_eq!(builder.ref_field, "id");
+    }
+
+    #[test]
+    fn ref_field_sets_custom_field() {
+        let mut b = Builder::default();
+        b.ref_field("uuid");
+        assert_eq!(b.ref_field, "uuid");
+    }
+
+    #[test]
+    #[should_panic(expected = "ref field name cannot be empty")]
+    fn ref_field_empty_panics() {
+        Builder::default().ref_field("");
+    }
+
+    #[test]
+    #[should_panic(expected = "without a 'uuid' field")]
+    fn ref_field_name_in_error_message() {
+        let mut b = Builder::default();
+        b.ref_field("uuid");
+        b.add(doc("", "hello"));
+    }
+
+    #[test]
+    fn use_plugin_applies_builder_mutation() {
+        let mut b = Builder::default();
+        b.use_plugin(|b| {
+            b.k1(3.0);
+            b.b(0.5);
+        });
+        assert_eq!(b.k1, 3.0);
+        assert_eq!(b.b, 0.5);
     }
 }

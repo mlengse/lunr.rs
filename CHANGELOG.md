@@ -8,6 +8,37 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Builder API completion (2026-08-27)
+
+Closed the last two `Builder` public-API gaps on the `Document`-trait port.
+
+#### Added
+
+- **`src/builder.rs`** - `Builder::use_plugin(impl FnOnce(&mut Builder))` — plugin
+  hook running arbitrary builder mutations, mirroring lunr.js `Builder.use`.
+- **`src/builder.rs`** - `Builder::ref_field(&str)` — configurable document ref
+  field name (default `"id"`). Empty name panics; the name is surfaced in the
+  missing-ref validation message, matching lunr.js `Builder.ref`. The ref value
+  itself is still read via `Document::id()`.
+
+#### Changed
+
+- **`src/builder.rs`** - `add()` validation message now names the ref field:
+  `"cannot add a document without a '<ref>' field to the index"`.
+- Docs reconciled: `README.md` "What's not done", `implementation_plan.md` §7.4 /
+  §8, and `SPEC.md` §9 / §13 no longer list `use_plugin()` / `ref_field()` as
+  outstanding. Test count updated to 78 (75 unit + 3 integration).
+
+#### Remaining
+
+- NFC normalization (deferred, no `unicode-normalization` dep).
+- Configurable tokenizer separator.
+- Non-English stemmer plugin architecture.
+
+---
+
+## [Unreleased]
+
 ### Parity 1:1 Achievement (2026-08-23)
 
 All 73 tests pass (70 unit + 3 integration). 1:1 parity with lunr.js v2.3.9 achieved.
@@ -34,14 +65,9 @@ All 73 tests pass (70 unit + 3 integration). 1:1 parity with lunr.js v2.3.9 achi
 - **`tests/parity.rs`** — Updated to use Cluedo documents (3 docs, title+body fields).
   All 3 integration tests now pass.
 - **`src/document.rs`** — Added `boost: f64` to `Field`, `boost()` default to `Document`.
-- **`src/builder.rs`** — Added `ref_field()`, `FieldOpts::extractor`; extractor
-  now wired into `add()` (overrides field text when present, matching
-  lunr.js `extractor(doc)` behavior).
+- **`src/builder.rs`** — `FieldOpts::extractor` wired into `add()` (overrides
+  field text when present, matching lunr.js `extractor(doc)` behavior).
 - **`src/index.rs`** — Added `Serialize` impl for `SearchResult`.
-
-#### Remaining
-
-- Full `Builder::ref_field()` integration.
 
 ---
 

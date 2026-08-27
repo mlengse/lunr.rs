@@ -16,21 +16,23 @@ in JavaScript.
   boost, presence operators (+/-).
 - **Search** — full query execution with required/prohibited/optional presence,
   term expansion via TokenSet intersection, asymmetric similarity scoring.
-- **Serialization** — JSON output matching lunr.js v2.3.9 format.
+- **Serialization** — JSON index output compatible with lunr.js v2.3.9, searchable
+  when loaded in JavaScript.
 - **Load** — deserialize JSON index back into a searchable Index.
-- **TokenSet** — DAG for wildcard and fuzzy matching with minimization.
-- **69 unit tests** across all modules.
+- **`SearchResult` Serialize** — search results serializable to JSON.
+- **`FieldOpts` extractor** — per-field text override with closure.
+- **Doc boost** — per-document `boost()` in the `Document` trait.
+- **`Builder::ref_field()`** — configurable document ref field (default "id").
+- **`Builder::use_plugin()`** — plugin hook for arbitrary builder mutations.
+- **Integration tests** — `tests/parity.rs` compares index JSON, search results, and
+  roundtrip load-then-search against lunr.js v2.3.9 reference fixtures.
+- **78 tests** (75 unit + 3 integration) across all modules.
 
 ### What's not done
 
-- [ ] `Builder::use_plugin()` plugin system
-- [ ] `Builder::ref_field()` for custom document ref field
-- [ ] Integration tests (build → serialize → load → search → compare with lunr.js)
-- [ ] `SearchResult` Serialize impl for JSON output
-- [ ] NFC normalization (deferred, no `unicode-normalization` dep)
-- [ ] Configurable tokenizer separator
-- [ ] `FieldOpts` extractor for nested documents
-- [ ] Doc boost in Document trait
+- [ ] NFC normalization (deferred — no `unicode-normalization` dep; tokenizer
+      lowercases but does not NFC-normalize)
+- [ ] Configurable tokenizer separator (split on whitespace+hyphens is hardcoded)
 - [ ] Non-English stemmer plugin architecture
 
 ## Example
