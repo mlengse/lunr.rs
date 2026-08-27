@@ -24,16 +24,18 @@ in JavaScript.
 - **Doc boost** — per-document `boost()` in the `Document` trait.
 - **`Builder::ref_field()`** — configurable document ref field (default "id").
 - **`Builder::use_plugin()`** — plugin hook for arbitrary builder mutations.
+- **NFC normalization** — tokenizer composes decomposed sequences (via `unicode-normalization`).
+- **Configurable tokenizer separator** — `Builder::tokenizer_separator()` sets the
+  delimiter character set (default `[\s-]+`).
+- **Plugin pipeline functions** — `Pipeline::add_custom()` registers arbitrary
+  (e.g. non-English) stemmers/functions into the index or search pipeline.
 - **Integration tests** — `tests/parity.rs` compares index JSON, search results, and
   roundtrip load-then-search against lunr.js v2.3.9 reference fixtures.
-- **78 tests** (75 unit + 3 integration) across all modules.
+- **87 tests** (84 unit + 3 integration) across all modules.
 
 ### What's not done
 
-- [ ] NFC normalization (deferred — no `unicode-normalization` dep; tokenizer
-      lowercases but does not NFC-normalize)
-- [ ] Configurable tokenizer separator (split on whitespace+hyphens is hardcoded)
-- [ ] Non-English stemmer plugin architecture
+- Nothing — the full README/SPEC feature set for this proof-of-concept is implemented.
 
 ## Example
 

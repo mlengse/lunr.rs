@@ -5,7 +5,7 @@ use crate::inverted_index::InvertedIndex;
 use crate::pipeline::Pipeline;
 use crate::vector::Vector;
 
-use crate::token::{Term, Tokens};
+use crate::token::{Term, Tokenizer};
 use std::collections::{HashMap, HashSet};
 
 pub struct FieldOpts {
@@ -44,6 +44,8 @@ pub struct Builder {
 
     ref_field: String,
 
+    tokenizer: Tokenizer,
+
     average_field_length: HashMap<String, f64>,
 
     k1: f64,
@@ -64,6 +66,7 @@ impl Default for Builder {
             field_refs: Vec::new(),
             document_refs: HashSet::new(),
             ref_field: "id".to_string(),
+            tokenizer: Tokenizer::default(),
             average_field_length: HashMap::new(),
             k1: 1.2,
             b: 0.75,
@@ -92,6 +95,12 @@ impl Builder {
         plugin(self);
     }
 
+    /// Configure the tokenizer's separator character set, e.g. `" ,"` to split
+    /// on spaces and commas. Default is whitespace + hyphen (`[\s-]+`).
+    pub fn tokenizer_separator(&mut self, separators: &str) {
+        self.tokenizer = Tokenizer::new().with_separator(separators);
+    }
+
     pub fn add<T: Document>(&mut self, document: T) {
         let doc_ref = document.id();
         assert!(!doc_ref.is_empty(),
@@ -108,7 +117,7 @@ impl Builder {
                 .and_then(|f| f.extractor)
                 .map(|ext| ext(&field))
                 .unwrap_or(field.text);
-            let tokens: Tokens = text.into();
+            let tokens = self.tokenizer.tokenize(&text);
             let field_length = tokens.len();
 
             if !self.fields.contains(&field.name) {
@@ -345,5 +354,52 @@ mod tests {
         });
         assert_eq!(b.k1, 3.0);
         assert_eq!(b.b, 0.5);
+    }
+
+    #[test]
+    fn custom_separator_end_to_end() {
+        let mut b = Builder::default();
+        b.field("text", FieldOpts::default());
+        b.tokenizer_separator(" ,");
+        b.add(doc("a", "hello,world"));
+        b.build();
+
+        let mut index = crate::index::Index::from(b);
+        let results = index.search("world");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].ref_, "a");
+    }
+
+    #[test]
+    fn plugin_stemmer_wired_into_pipeline() {
+        use crate::pipeline::PipelineResult;
+        use crate::token::Token;
+
+        // A "non-English stemmer" plugin applied to both index and search
+        // pipelines via use_plugin: strips a trailing "z" (identity otherwise).
+        let plugin = |b: &mut Builder| {
+            let f = |t: Token| {
+                let term = t.term.trim_end_matches('z').to_string();
+                if term.is_empty() {
+                    PipelineResult::None
+                } else {
+                    PipelineResult::Token(Token { term, metadata: t.metadata })
+                }
+            };
+            b.pipeline.add_custom("zStripper", f);
+            b.search_pipeline.add_custom("zStripper", f);
+        };
+
+        let mut b = Builder::default();
+        b.field("text", FieldOpts::default());
+        b.use_plugin(plugin);
+        // "izz" stems to "i", "waz" stems to "wa" -> both search for "waz" as "wa".
+        b.add(doc("a", "izz waz"));
+        b.build();
+
+        let mut index = crate::index::Index::from(b);
+        let results = index.search("waz");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].ref_, "a");
     }
 }

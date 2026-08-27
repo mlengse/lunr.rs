@@ -5,6 +5,7 @@ use std::cmp::Ordering;
 use std::hash::{Hash, Hasher};
 
 use serde_json::Value;
+use unicode_normalization::UnicodeNormalization;
 
 pub type Metadata = Value;
 
@@ -17,15 +18,52 @@ impl Tokens {
     }
 }
 
-impl From<String> for Tokens {
-    fn from(text: String) -> Tokens {
-        let normalized = text.to_lowercase();
+/// Tokenizer over a configurable separator character set.
+///
+/// Defaults to splitting on whitespace and hyphens, matching lunr.js
+/// `tokenizer.separator = /[\s-]+/`. The separator is a set of single
+/// characters treated as delimiters; the default includes the common
+/// whitespace characters plus `-`.
+#[derive(Clone)]
+pub struct Tokenizer {
+    separators: Vec<char>,
+}
+
+impl Default for Tokenizer {
+    fn default() -> Self {
+        Tokenizer {
+            separators: vec![' ', '\t', '\r', '\n', '\u{0B}', '\u{0C}', '-'],
+        }
+    }
+}
+
+impl Tokenizer {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Configure the separator character set, e.g. `" ,"` to split on spaces
+    /// and commas. Empty string means never split (a single token).
+    pub fn with_separator(mut self, separators: &str) -> Self {
+        self.separators = separators.chars().collect();
+        self
+    }
+
+    /// A predicate marking whether a character is a token separator.
+    pub fn is_separator(&self, ch: char) -> bool {
+        self.separators.contains(&ch)
+    }
+
+    /// Tokenize `text` into a sequence: NFC-normalize, lowercase, then split
+    /// on the configured separator set, recording position metadata.
+    pub fn tokenize(&self, text: &str) -> Tokens {
+        let normalized: String = text.nfc().collect::<String>().to_lowercase();
         let mut tokens = Vec::new();
         let mut start = 0;
         let mut index = 0;
 
         for (end, ch) in normalized.char_indices() {
-            if ch.is_whitespace() || ch == '-' {
+            if self.is_separator(ch) {
                 if end > start {
                     let term = normalized[start..end].to_string();
                     let mut metadata = HashMap::new();
@@ -53,6 +91,12 @@ impl From<String> for Tokens {
         }
 
         Tokens(tokens)
+    }
+}
+
+impl From<String> for Tokens {
+    fn from(text: String) -> Tokens {
+        Tokenizer::default().tokenize(&text)
     }
 }
 
@@ -158,5 +202,43 @@ mod tests {
         let mut token = Token::new("foo");
         token.metadata.insert("string".into(), Value::String("string".into()));
         token.metadata.insert("number".into(), Value::Number(123.into()));
+    }
+
+    #[test]
+    fn nfc_normalizes_decomposed_accents() {
+        // e + combining acute (U+00E9 decomposed U+0065 U+0301) composes to é.
+        let tokens: Tokens = "cafe\u{301}".into();
+        let terms: Vec<String> = tokens.into_iter().map(|t| t.term).collect();
+        assert_eq!(terms, vec!["caf\u{e9}"]);
+    }
+
+    #[test]
+    fn nfc_leaves_ascii_untouched() {
+        let tokens: Tokens = "Hello World".into();
+        let terms: Vec<String> = tokens.into_iter().map(|t| t.term).collect();
+        assert_eq!(terms, vec!["hello", "world"]);
+    }
+
+    #[test]
+    fn default_separator_splits_whitespace_and_hyphen() {
+        let tokens: Tokens = "foo bar-baz".into();
+        let terms: Vec<String> = tokens.into_iter().map(|t| t.term).collect();
+        assert_eq!(terms, vec!["foo", "bar", "baz"]);
+    }
+
+    #[test]
+    fn custom_separator_overrides_default() {
+        let tokenizer = Tokenizer::new().with_separator(" ,");
+        let tokens = tokenizer.tokenize("foo,bar baz");
+        let terms: Vec<String> = tokens.into_iter().map(|t| t.term).collect();
+        assert_eq!(terms, vec!["foo", "bar", "baz"]);
+    }
+
+    #[test]
+    fn custom_separator_keeps_hyphens() {
+        let tokenizer = Tokenizer::new().with_separator(" ");
+        let tokens = tokenizer.tokenize("foo-bar baz");
+        let terms: Vec<String> = tokens.into_iter().map(|t| t.term).collect();
+        assert_eq!(terms, vec!["foo-bar", "baz"]);
     }
 }

@@ -8,6 +8,43 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Tokenizer & plugin pipeline completion (2026-08-27)
+
+Completed the three deferred items: NFC normalization, configurable tokenizer
+separator, and the non-English stemmer plugin architecture.
+
+#### Added
+
+- **`src/token.rs`** - `Tokenizer` type with `tokenize()` that NFC-normalizes and
+  lowercases (via new `unicode-normalization` dependency), then splits on a
+  configurable separator character set. `Tokenizer::with_separator(&str)`.
+- **`src/pipeline.rs`** - `PipelineFunction::Custom { label, run }` +
+  `Pipeline::add_custom(label, f)` — register arbitrary plugin pipeline functions
+  (e.g. non-English stemmers) with a serialized label. Holds `Arc<dyn Fn>` for
+  Clone-safety.
+- **`src/builder.rs`** - `Builder::tokenizer_separator(&str)` configures the
+  tokenizer delimiter set (default `[\s-]+`); `add()` now uses the configured
+  tokenizer via `Tokenizer`.
+
+#### Changed
+
+- **`src/builder.rs`** - `add()` tokenizes through the builder's `Tokenizer`
+  (NFC + lower + configurable separator) instead of `Into<Tokens>`.
+- **`Cargo.toml`** - added `unicode-normalization = "0.1"`.
+- Docs reconciled: `README.md`, `SPEC.md` (§4, §7, §12, §13), `implementation_plan.md`
+  (§1, §2, §8) — NFC/separator/stemmer-plugin no longer listed as outstanding.
+  Test count updated to 87 (84 unit + 3 integration).
+- Tests: 9 new unit tests (3 tokenizer/NFC, 2 separator, 2 custom pipeline,
+  2 end-to-end builder) — 84 unit + 3 integration = 87 total.
+
+#### Remaining
+
+- None.
+
+---
+
+## [Unreleased]
+
 ### Builder API completion (2026-08-27)
 
 Closed the last two `Builder` public-API gaps on the `Document`-trait port.
@@ -28,12 +65,6 @@ Closed the last two `Builder` public-API gaps on the `Document`-trait port.
 - Docs reconciled: `README.md` "What's not done", `implementation_plan.md` §7.4 /
   §8, and `SPEC.md` §9 / §13 no longer list `use_plugin()` / `ref_field()` as
   outstanding. Test count updated to 78 (75 unit + 3 integration).
-
-#### Remaining
-
-- NFC normalization (deferred, no `unicode-normalization` dep).
-- Configurable tokenizer separator.
-- Non-English stemmer plugin architecture.
 
 ---
 

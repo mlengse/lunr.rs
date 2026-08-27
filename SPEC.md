@@ -6,7 +6,7 @@
 | **Target** | lunr.js v2.3.9 compatible index output |
 | **Rust edition** | 2021 |
 | **License** | MIT |
-| **Status** | Proof of concept — Phases 1-8 complete, 78 tests. Core wire-format parity with lunr.js v2.3.9; `use_plugin()` and `ref_field()` implemented, NFC & separator config outstanding |
+| **Status** | Proof of concept — Phases 1-8 complete, 87 tests. Core wire-format parity with lunr.js v2.3.9; NFC normalization, configurable tokenizer separator, and plugin pipeline functions (non-English stemmers) all implemented |
 
 This document is the **source of truth** for lunr.rs behavior. All implementation
 decisions must conform to this spec. Deviations require spec updates first.
@@ -84,14 +84,19 @@ src/
 - Input string → `normalize(NFC).to_lowercase()`, split on separator `[\s-]+`.
 - Empty tokens discarded.
 - Position metadata: `{"position": [start, length], "index": token_index}`.
-- `tokenizer.separator` is configurable.
+- `tokenizer.separator` is configurable via `Builder::tokenizer_separator(&str)`,
+  a set of delimiter characters (default `" \t\r\n\v\f-"`). Implemented with the
+  `unicode-normalization` crate (`Tokenizer::tokenize` composes via NFC).
 
 ### 4.2 Pipeline
 
 - **Index pipeline** (used during `Builder::add`): `trimmer → stopWordFilter → stemmer`.
 - **Search pipeline** (used during `Index::query`): `stemmer`.
-- Pipeline is a `PipelineFunction` enum (`Trimmer`, `StopWordFilter`, `Stemmer`).
-- Enum dispatch for Clone-safe, no trait objects needed.
+- Pipeline is a `PipelineFunction` enum (`Trimmer`, `StopWordFilter`, `Stemmer`,
+  `Custom`). Enum dispatch for Clone-safe, no trait objects needed.
+- `Custom { label, run }` holds an `Arc<dyn Fn(Token) -> PipelineResult>` plugin
+  function for user-supplied (e.g. non-English) stemmers/filters —
+  `Pipeline::add_custom(label, f)` registers one; the label is serialized.
 - Returning `None` skips the token; returning `Vec<Token>` expands (term expansion).
 - Registered functions have labels for serialization.
 
@@ -105,6 +110,9 @@ src/
 
 - Porter stemmer (English), ported from lunr.js `lib/stemmer.js`.
 - Registered as `"stemmer"`.
+- Non-English stemmers are supported via the plugin pipeline architecture:
+  `Pipeline::add_custom(label, f)` registers an arbitrary token function with a
+  serialized label, used identically to the built-in functions.
 
 ### 4.5 Stop-word Filter
 
@@ -207,9 +215,9 @@ impl Builder {
     pub fn b(&mut self, n: f64);                        // BM25 b param (clamped 0..=1)
     pub fn k1(&mut self, n: f64);                      // BM25 k1 param (clamped >= 0)
     pub fn use_plugin(&mut self, fn: impl FnOnce(&mut Builder)); // plugin
+    pub fn tokenizer_separator(&mut self, separators: &str); // configurable separator
     pub fn pipeline: Pipeline;                          // index pipeline
     pub fn search_pipeline: Pipeline;                   // search pipeline
-    pub fn tokenizer: fn(...) -> Vec<Token>;            // configurable tokenizer
 }
 ```
 
@@ -377,11 +385,11 @@ lunr.js has 540 tests across: `builder`, `field_ref`, `idf`, `index`, `lunr`,
 
 ## 12. Design Constraints
 
-- **Minimal dependencies**: `serde`, `serde_json` only. `erased-serde` listed but unused.
+- **Minimal dependencies**: `serde`, `serde_json`, `unicode-normalization`. `erased-serde` listed but unused.
 - **No `unsafe`** — pure safe Rust.
 - **Wire compatibility** — output must be loadable by lunr.js v2.3.9.
 - **Error types** — use `thiserror` or manual `Display`/`Error` impls.
-- **Pipeline** — `PipelineFunction` enum (Trimmer, StopWordFilter, Stemmer), Clone-safe via enum dispatch.
+- **Pipeline** — `PipelineFunction` enum (Trimmer, StopWordFilter, Stemmer, Custom), Clone-safe via enum dispatch + `Arc`.
 - **NFC normalization** — in tokenizer, not pipeline.
 - **`TokenSet::intersect`** — no memoization (soundness requirement, see lunr.js audit).
 - **`Vector::magnitude`** — `Cell<Option<f64>>` cache, interior mutability for `&self` on `similarity()`.
@@ -395,16 +403,16 @@ lunr.js has 540 tests across: `builder`, `field_ref`, `idf`, `index`, `lunr`,
 |---|---|---|
 | `field_ref` | **OK** | `fromString`, `JOINER` const, `Display` impl, `to_ref_string()` |
 | `token` | **OK** | `update()`, `clone()`, `clone_with()`, `Display`. `Metadata` = `serde_json::Value` |
-| `tokenizer` | Partial | Split on whitespace+hyphens with position metadata. No NFC (deferred), no separator config |
+| `tokenizer` | **OK** | NFC-normalize + lowercase, split on configurable separator with position metadata |
 | `vector` | **OK** | `BTreeMap` sparse vector with `insert`, `upsert`, `dot`, `magnitude` (Cell-cached), `similarity` (asymmetric). `from_elements` for deserialization |
 | `inverted_index` | **OK** | Correct shape, `document_count()`, `terms()`, `field_posting()`, `add_posting_raw()` for load. `FieldPosting` public |
-| `builder` | **OK** | IDF + BM25 correct, shared idf module, validation added, pipeline wired. `field()` with `FieldOpts`, `b()`/`k1()` setters, `search_pipeline`, `use_plugin()`, `ref_field()` (default "id") |
+| `builder` | **OK** | IDF + BM25 correct, shared idf module, validation added, pipeline wired. `field()` with `FieldOpts`, `b()`/`k1()` setters, `search_pipeline`, `use_plugin()`, `ref_field()` (default "id"), `tokenizer_separator()` |
 | `index` | **OK** | Serialization + `search()`, `query()`, `load()`, TokenSet integration, `search_pipeline`. Builds token_set from terms |
 | `lunr` (factory) | **OK** | `lunr()` convenience API with default pipeline (trimmer → stopWordFilter → stemmer) and searchPipeline (stemmer) |
 | `document` | OK | Lifetime `'a` removed. `boost()` present (default 1.0) |
 | `set` | **OK** | `Empty`, `Complete`, `Elements` variants; `union()`, `intersect()`, `contains()` |
 | `idf` | **OK** | Standalone `idf(posting, document_count)`, shared by builder & index |
-| `pipeline` | **OK** | `Pipeline` with `PipelineFunction` enum (`Trimmer`, `StopWordFilter`, `Stemmer`). `run()`, `run_string()`, `to_json()`. Clone-safe via enum dispatch |
+| `pipeline` | **OK** | `Pipeline` with `PipelineFunction` enum (`Trimmer`, `StopWordFilter`, `Stemmer`, `Custom`). `run()`, `run_string()`, `to_json()`, `add_custom()`. Clone-safe via enum dispatch + `Arc` |
 | `stemmer` | **OK** | Porter stemmer ported from lunr.js, 5-step algorithm |
 | `stop_word_filter` | **OK** | English stop words, `generate_stop_word_filter()` factory |
 | `trimmer` | **OK** | Non-word char trimming with Unicode ranges |
