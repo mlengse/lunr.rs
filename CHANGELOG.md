@@ -8,6 +8,52 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Phase 9: Performance Benchmark (2026-08-28)
+
+Side-by-side, measurement-grade perf comparison of `lunr.rs` vs `lunr.js` on the
+**same corpus and workload** (different runtimes, run independently, compare the
+tables). 31 workload pairs, all aligned; zero missing.
+
+#### Added
+
+- **`benches/` (criterion)** — micro-suites `tokenizer`, `pipeline`, `stemmer`;
+  build suite `builder`; search suite `search` (single/multi term, wildcards
+  trailing/leading/contained, field, edit distance, typeahead, negated, required);
+  query suites `query_parser`, `token_set`; `vector`. Mirrored from the matching
+  lunr.js `perf/*_perf.js`.
+- **`benches/common.rs`** — shared corpus: first 1000 words of the npm `word-list`
+  (sliced + sorted exactly as lunr.js `perf/perf_helper.js`) + the Cluedo docs,
+  so both runtimes read identical input.
+- **`benches/data/words.txt`** — committed 1000-word corpus slice.
+- **`Cargo.toml`** — `[dev-dependencies] criterion = { version = "0.5", features = ["html_reports"] }`;
+  8 `[[bench]]` targets, `harness = false`.
+- **`src/lib.rs`** — exposed `pub mod token` and `pub mod vector` (previously
+  internal) so bench targets and downstream consumers can reach `Tokenizer`,
+  `Tokens`, and `Vector`.
+- **Root `bench_lunr.py`** — orchestrator (workspace `bench_*.py` convention):
+  runs `cargo bench` (per target, criterion flags sent only to bench harnesses)
+  + `node perf/*.js`, parses criterion medians and `ops/sec`, prints a
+  `JS µs/op / Rust µs/op / speedup` table, and optionally `--save-baseline FILE`.
+  JS labels are scoped per suite (three suites reuse `#call`) so no bench collides.
+- **`perf/baseline-<date>.json`** — committed baseline snapshot (2026-08-28) from
+  the first full run, so future regressions are detectable.
+
+#### Baseline highlights (µs/op, lower is better)
+
+- **Rust wins:** `vector` (~7×), `query_parser` field/modifier/complex (~2.4-2.7×),
+  `tokenizer` (~2.2×).
+- **Rust slower (pre-optimization, expected):** `stemmer` (~0.2×),
+  `pipeline` (~0.02-0.03×), most `search` variants (~0.3-0.9×).
+
+#### Remaining
+
+- Optimization is intentionally out-of-scope for Phase 9; hot spots are now
+  data-driven and tracked in `perf/baseline-*.json`.
+
+---
+
+## [Unreleased]
+
 ### Tokenizer & plugin pipeline completion (2026-08-27)
 
 Completed the three deferred items: NFC normalization, configurable tokenizer

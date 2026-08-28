@@ -8,3 +8,38 @@ edition = "2021"
 serde = "1.0"
 serde_json = "1.0"
 unicode-normalization = "0.1"
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "tokenizer"
+harness = false
+
+[[bench]]
+name = "pipeline"
+harness = false
+
+[[bench]]
+name = "stemmer"
+harness = false
+
+[[bench]]
+name = "builder"
+harness = false
+
+[[bench]]
+name = "search"
+harness = false
+
+[[bench]]
+name = "query_parser"
+harness = false
+
+[[bench]]
+name = "token_set"
+harness = false
+
+[[bench]]
+name = "vector"
+harness = false

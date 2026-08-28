@@ -1,9 +1,9 @@
 mod field_ref;
-mod token;
+pub mod token;
 pub mod builder;
 pub mod document;
 mod inverted_index;
-mod vector;
+pub mod vector;
 pub mod index;
 
 pub mod idf;
