@@ -5,6 +5,18 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 static NEXT_ID: AtomicUsize = AtomicUsize::new(1);
 
+const WILDCARD: char = '*';
+
+fn edge_snapshot(inner: &TokenSet) -> Vec<(char, TokenSet)> {
+    inner
+        .inner
+        .borrow()
+        .edges
+        .iter()
+        .map(|(k, v)| (*k, v.clone()))
+        .collect()
+}
+
 #[derive(Debug, Clone)]
 pub struct TokenSet {
     inner: Rc<RefCell<TokenSetInner>>,
@@ -13,7 +25,7 @@ pub struct TokenSet {
 #[derive(Debug)]
 struct TokenSetInner {
     final_: bool,
-    edges: HashMap<String, TokenSet>,
+    edges: HashMap<char, TokenSet>,
     id: usize,
     _str: Option<String>,
 }
@@ -24,7 +36,7 @@ impl TokenSet {
             inner: Rc::new(RefCell::new(TokenSetInner {
                 final_: false,
                 edges: HashMap::new(),
-                id: NEXT_ID.fetch_add(1, Ordering::SeqCst),
+                id: NEXT_ID.fetch_add(1, Ordering::Relaxed),
                 _str: None,
             })),
         }
@@ -36,15 +48,14 @@ impl TokenSet {
 
         for (i, ch) in str.chars().enumerate() {
             let is_final = i == str.len() - 1;
-            let ch_str = ch.to_string();
 
-            if ch == '*' {
-                node.set_edge(ch_str.clone(), node.clone());
+            if ch == WILDCARD {
+                node.set_edge(WILDCARD, node.clone());
                 node.set_final(is_final);
             } else {
                 let next = TokenSet::new();
                 next.set_final(is_final);
-                node.set_edge(ch_str, next.clone());
+                node.set_edge(ch, next.clone());
                 node = next;
             }
         }
@@ -71,30 +82,31 @@ impl TokenSet {
 
     pub fn from_fuzzy_string(str: &str, edit_distance: usize) -> Self {
         let root = TokenSet::new();
-        let mut stack = vec![Frame {
+        let chars: Vec<char> = str.chars().collect();
+        let mut stack = Vec::new();
+        stack.push(Frame {
             node: root.clone(),
             edits_remaining: edit_distance,
-            str: str.to_string(),
-        }];
+            chars: chars.clone(),
+        });
 
         while let Some(frame) = stack.pop() {
             // no edit
-            if !frame.str.is_empty() {
-                let ch = frame.str.chars().next().unwrap().to_string();
-                let no_edit_node = frame.node.get_edge(&ch).unwrap_or_else(|| {
+            if let Some(&ch) = frame.chars.first() {
+                let no_edit_node = frame.node.get_edge(ch).unwrap_or_else(|| {
                     let new_node = TokenSet::new();
-                    frame.node.set_edge(ch.clone(), new_node.clone());
+                    frame.node.set_edge(ch, new_node.clone());
                     new_node
                 });
 
-                if frame.str.len() == 1 {
+                if frame.chars.len() == 1 {
                     no_edit_node.set_final(true);
                 }
 
                 stack.push(Frame {
                     node: no_edit_node,
                     edits_remaining: frame.edits_remaining,
-                    str: frame.str[1..].to_string(),
+                    chars: frame.chars[1..].to_vec(),
                 });
             }
 
@@ -102,76 +114,74 @@ impl TokenSet {
                 continue;
             }
 
-            // insertion
-            let insertion_node = frame.node.get_edge("*").unwrap_or_else(|| {
+            // insertion (wildcard)
+            let insertion_node = frame.node.get_edge(WILDCARD).unwrap_or_else(|| {
                 let new_node = TokenSet::new();
-                frame.node.set_edge("*".to_string(), new_node.clone());
+                frame.node.set_edge(WILDCARD, new_node.clone());
                 new_node
             });
 
-            if frame.str.is_empty() {
+            if frame.chars.is_empty() {
                 insertion_node.set_final(true);
             }
 
             stack.push(Frame {
                 node: insertion_node,
                 edits_remaining: frame.edits_remaining - 1,
-                str: frame.str.clone(),
+                chars: frame.chars.clone(),
             });
 
             // deletion
-            if frame.str.len() > 1 {
+            if frame.chars.len() > 1 {
                 stack.push(Frame {
                     node: frame.node.clone(),
                     edits_remaining: frame.edits_remaining - 1,
-                    str: frame.str[1..].to_string(),
+                    chars: frame.chars[1..].to_vec(),
                 });
             }
 
-            if frame.str.len() == 1 {
+            if frame.chars.len() == 1 {
                 frame.node.set_final(true);
             }
 
-            // substitution
-            if !frame.str.is_empty() {
-                let substitution_node = frame.node.get_edge("*").unwrap_or_else(|| {
+            // substitution (wildcard)
+            if !frame.chars.is_empty() {
+                let substitution_node = frame.node.get_edge(WILDCARD).unwrap_or_else(|| {
                     let new_node = TokenSet::new();
-                    frame.node.set_edge("*".to_string(), new_node.clone());
+                    frame.node.set_edge(WILDCARD, new_node.clone());
                     new_node
                 });
 
-                if frame.str.len() == 1 {
+                if frame.chars.len() == 1 {
                     substitution_node.set_final(true);
                 }
 
                 stack.push(Frame {
                     node: substitution_node,
                     edits_remaining: frame.edits_remaining - 1,
-                    str: frame.str[1..].to_string(),
+                    chars: frame.chars[1..].to_vec(),
                 });
             }
 
             // transposition
-            if frame.str.len() > 1 {
-                let chars: Vec<char> = frame.str.chars().collect();
-                let char_a = chars[0].to_string();
-                let char_b = chars[1].to_string();
+            if frame.chars.len() > 1 {
+                let c0 = frame.chars[0];
+                let c1 = frame.chars[1];
 
-                let transpose_node = frame.node.get_edge(&char_b).unwrap_or_else(|| {
+                let transpose_node = frame.node.get_edge(c1).unwrap_or_else(|| {
                     let new_node = TokenSet::new();
-                    frame.node.set_edge(char_b.clone(), new_node.clone());
+                    frame.node.set_edge(c1, new_node.clone());
                     new_node
                 });
 
-                if frame.str.len() == 1 {
-                    transpose_node.set_final(true);
-                }
-
-                let remaining: String = chars[2..].iter().collect();
+                // remaining after swapping first two chars: c0 + rest
+                let mut remaining: Vec<char> = Vec::with_capacity(frame.chars.len());
+                remaining.push(c0);
+                remaining.extend_from_slice(&frame.chars[2..]);
                 stack.push(Frame {
                     node: transpose_node,
                     edits_remaining: frame.edits_remaining - 1,
-                    str: format!("{}{}", char_a, remaining),
+                    chars: remaining,
                 });
             }
         }
@@ -180,7 +190,7 @@ impl TokenSet {
     }
 
     pub fn to_array(&self) -> Vec<String> {
-        if self.get_edges().contains_key("*") {
+        if self.get_edges().contains_key(&WILDCARD) {
             panic!("cannot convert a TokenSet containing wildcards to an array");
         }
 
@@ -195,11 +205,10 @@ impl TokenSet {
                 words.push(frame.prefix.clone());
             }
 
-            for (edge, node) in frame.node.get_edges() {
-                stack.push(StackFrame {
-                    prefix: format!("{}{}", frame.prefix, edge),
-                    node: node.clone(),
-                });
+            for (edge, node) in edge_snapshot(&frame.node) {
+                let mut prefix = frame.prefix.clone();
+                prefix.push(edge);
+                stack.push(StackFrame { prefix, node });
             }
         }
 
@@ -215,16 +224,16 @@ impl TokenSet {
         }];
 
         while let Some(frame) = stack.pop() {
-            let q_edges: Vec<_> = frame.q_node.get_edges().into_iter().collect();
-            let n_edges: Vec<_> = frame.node.get_edges().into_iter().collect();
+            let q_edges = edge_snapshot(&frame.q_node);
+            let n_edges = edge_snapshot(&frame.node);
 
             for (q_edge, q_node) in &q_edges {
                 for (n_edge, n_node) in &n_edges {
-                    if n_edge == q_edge || q_edge == "*" {
+                    if n_edge == q_edge || *q_edge == WILDCARD {
                         let final_ = n_node.is_final() && q_node.is_final();
-                        let next = frame.output.get_edge(n_edge).unwrap_or_else(|| {
+                        let next = frame.output.get_edge(*n_edge).unwrap_or_else(|| {
                             let new_node = TokenSet::new();
-                            frame.output.set_edge(n_edge.clone(), new_node.clone());
+                            frame.output.set_edge(*n_edge, new_node.clone());
                             new_node
                         });
 
@@ -251,16 +260,16 @@ impl TokenSet {
         self.inner.borrow_mut().final_ = val;
     }
 
-    fn get_edges(&self) -> HashMap<String, TokenSet> {
+    fn get_edges(&self) -> HashMap<char, TokenSet> {
         self.inner.borrow().edges.clone()
     }
 
-    fn set_edge(&self, key: String, val: TokenSet) {
+    fn set_edge(&self, key: char, val: TokenSet) {
         self.inner.borrow_mut().edges.insert(key, val);
     }
 
-    fn get_edge(&self, key: &str) -> Option<TokenSet> {
-        self.inner.borrow().edges.get(key).cloned()
+    fn get_edge(&self, key: char) -> Option<TokenSet> {
+        self.inner.borrow().edges.get(&key).cloned()
     }
 
     fn id(&self) -> usize {
@@ -273,12 +282,12 @@ impl TokenSet {
         }
 
         let mut str = if self.is_final() { "1" } else { "0" }.to_string();
-        let mut labels: Vec<String> = self.get_edges().keys().cloned().collect();
-        labels.sort();
+        let mut edges: Vec<(char, TokenSet)> =
+            self.inner.borrow().edges.iter().map(|(k, v)| (*k, v.clone())).collect();
+        edges.sort_by_key(|(k, _)| *k);
 
-        for label in &labels {
-            let node = self.get_edge(label).unwrap();
-            str.push_str(label);
+        for (label, node) in edges {
+            str.push(label);
             str.push_str(&node.id().to_string());
         }
 
@@ -287,6 +296,30 @@ impl TokenSet {
 
     fn set_str(&self, val: String) {
         self.inner.borrow_mut()._str = Some(val);
+    }
+
+    /// Id-independent, cycle-safe structural signature (testing only).
+    #[doc(hidden)]
+    pub fn __struct_fingerprint(&self) -> String {
+        fn walk(node: &TokenSet, on_path: &mut Vec<usize>) -> String {
+            let id = node.id();
+            if on_path.contains(&id) {
+                return "CYCLE".to_string();
+            }
+            on_path.push(id);
+            let mut s = if node.is_final() { "1" } else { "0" }.to_string();
+            let mut edges: Vec<(char, TokenSet)> =
+                node.inner.borrow().edges.iter().map(|(k, v)| (*k, v.clone())).collect();
+            edges.sort_by_key(|(k, _)| *k);
+            for (label, child) in &edges {
+                s.push('L');
+                s.push(*label);
+                s.push_str(&walk(child, on_path));
+            }
+            on_path.pop();
+            s
+        }
+        walk(self, &mut Vec::new())
     }
 }
 
@@ -305,7 +338,7 @@ impl TokenSet {
 struct Frame {
     node: TokenSet,
     edits_remaining: usize,
-    str: String,
+    chars: Vec<char>,
 }
 
 struct StackFrame {
@@ -338,7 +371,7 @@ pub struct Builder {
 
 struct UncheckedNode {
     parent: TokenSet,
-    char: String,
+    char: char,
     child: TokenSet,
 }
 
@@ -377,9 +410,9 @@ impl Builder {
         };
 
         for i in common_prefix..word_chars.len() {
-            let ch = word_chars[i].to_string();
+            let ch = word_chars[i];
             let next_node = TokenSet::new();
-            node.set_edge(ch.clone(), next_node.clone());
+            node.set_edge(ch, next_node.clone());
 
             self.unchecked_nodes.push(UncheckedNode {
                 parent: node.clone(),
@@ -404,7 +437,7 @@ impl Builder {
             let child_key = node.child.str_repr();
 
             if let Some(minimized) = self.minimized_nodes.get(&child_key) {
-                node.parent.set_edge(node.char.clone(), minimized.clone());
+                node.parent.set_edge(node.char, minimized.clone());
             } else {
                 node.child.set_str(child_key.clone());
                 self.minimized_nodes.insert(child_key, node.child.clone());
@@ -432,7 +465,7 @@ mod tests {
     #[test]
     fn test_from_string() {
         let ts = TokenSet::from_string("test");
-        assert!(ts.get_edges().contains_key("t"));
+        assert!(ts.get_edges().contains_key(&'t'));
         assert!(!ts.is_final());
     }
 

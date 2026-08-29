@@ -69,7 +69,7 @@ impl Pipeline {
     pub fn run(&mut self, tokens: Vec<Token>) -> Vec<Token> {
         let mut tokens = tokens;
         for f in &mut self.stack {
-            let mut memo = Vec::new();
+            let mut memo = Vec::with_capacity(tokens.len());
             for token in tokens {
                 match f.run(token) {
                     PipelineResult::Token(t) => memo.push(t),

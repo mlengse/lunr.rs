@@ -1,0 +1,162 @@
+{
+  "tool": "bench_lunr.py",
+  "generated": "2026-08-29T17:45:51+00:00",
+  "units": {
+    "js": "us/op",
+    "rust": "us/op",
+    "speedup": "js_us / rust_us"
+  },
+  "note": "Both sides run the identical corpus/workload. speedup > 1 means Rust is faster.",
+  "workloads": {
+    "tokenizer": {
+      "js_us": 15.4636,
+      "rust_us": 36.236,
+      "speedup": 0.427
+    },
+    "stemmer": {
+      "js_us": 790.5138,
+      "rust_us": 534.72,
+      "speedup": 1.478
+    },
+    "pipeline/few tokens, token -> token": {
+      "js_us": 0.2896,
+      "rust_us": 2.9572,
+      "speedup": 0.098
+    },
+    "pipeline/many tokens, token -> token": {
+      "js_us": 6.821,
+      "rust_us": 78.391,
+      "speedup": 0.087
+    },
+    "pipeline/few tokens, token -> token array": {
+      "js_us": 1.1647,
+      "rust_us": 9.1684,
+      "speedup": 0.127
+    },
+    "pipeline/many tokens, token -> token array": {
+      "js_us": 23.0489,
+      "rust_us": 169.82,
+      "speedup": 0.136
+    },
+    "build": {
+      "js_us": 217.8175,
+      "rust_us": 168.38,
+      "speedup": 1.294
+    },
+    "search/single term": {
+      "js_us": 10.3256,
+      "rust_us": 17.41,
+      "speedup": 0.593
+    },
+    "search/multi term": {
+      "js_us": 15.9337,
+      "rust_us": 31.691,
+      "speedup": 0.503
+    },
+    "search/trailing wildcard": {
+      "js_us": 11.3945,
+      "rust_us": 21.849,
+      "speedup": 0.522
+    },
+    "search/leading wildcard": {
+      "js_us": 25.1294,
+      "rust_us": 55.775,
+      "speedup": 0.451
+    },
+    "search/contained wildcard": {
+      "js_us": 13.1582,
+      "rust_us": 30.361,
+      "speedup": 0.433
+    },
+    "search/with field": {
+      "js_us": 7.3445,
+      "rust_us": 9.1078,
+      "speedup": 0.806
+    },
+    "search/edit distance": {
+      "js_us": 41.971,
+      "rust_us": 100.25,
+      "speedup": 0.419
+    },
+    "search/typeahead": {
+      "js_us": 17.891,
+      "rust_us": 31.844,
+      "speedup": 0.562
+    },
+    "search/negated query": {
+      "js_us": 7.6809,
+      "rust_us": 9.5463,
+      "speedup": 0.805
+    },
+    "search/required term": {
+      "js_us": 23.2062,
+      "rust_us": 28.434,
+      "speedup": 0.816
+    },
+    "query_parser/simple": {
+      "js_us": 0.8911,
+      "rust_us": 1.1788,
+      "speedup": 0.756
+    },
+    "query_parser/field": {
+      "js_us": 1.3497,
+      "rust_us": 1.2688,
+      "speedup": 1.064
+    },
+    "query_parser/modifier": {
+      "js_us": 1.0155,
+      "rust_us": 1.458,
+      "speedup": 0.696
+    },
+    "query_parser/complex": {
+      "js_us": 1.845,
+      "rust_us": 1.792,
+      "speedup": 1.03
+    },
+    "token_set/fromArray": {
+      "js_us": 1153.4025,
+      "rust_us": 1336.1,
+      "speedup": 0.863
+    },
+    "token_set/fromString (no wildcard)": {
+      "js_us": 0.3552,
+      "rust_us": 1.2669,
+      "speedup": 0.28
+    },
+    "token_set/fromString (with wildcard)": {
+      "js_us": 0.3434,
+      "rust_us": 2.6008,
+      "speedup": 0.132
+    },
+    "token_set/fromFuzzyString": {
+      "js_us": 205.6767,
+      "rust_us": 467.46,
+      "speedup": 0.44
+    },
+    "token_set/toArray": {
+      "js_us": 2.4835,
+      "rust_us": 10.976,
+      "speedup": 0.226
+    },
+    "token_set/intersect (no wildcard)": {
+      "js_us": 0.956,
+      "rust_us": 2.2338,
+      "speedup": 0.428
+    },
+    "token_set/intersect (with wildcard)": {
+      "js_us": 8.6519,
+      "rust_us": 16.39,
+      "speedup": 0.528
+    },
+    "vector/dot": {
+      "js_us": 1.9753,
+      "rust_us": 0.8644,
+      "speedup": 2.285
+    },
+    "vector/similarity": {
+      "js_us": 2.1122,
+      "rust_us": 0.8442,
+      "speedup": 2.502
+    }
+  }
+}

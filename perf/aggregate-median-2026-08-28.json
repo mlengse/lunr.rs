@@ -1,0 +1,162 @@
+{
+  "title": "lunr.rs vs lunr.js \u2014 3x repeated, median of medians",
+  "method": "3 sequential full runs of bench_lunr.py (8 cargo bench targets + 8 node suites each), median criterion time/op per workload across the 3 runs",
+  "note": "speedup = js_us / rust_us; > 1 means Rust faster",
+  "workloads": {
+    "build": {
+      "js_us_median": 228.3105,
+      "rust_us_median": 202.04,
+      "speedup_median": 1.13
+    },
+    "pipeline/few tokens, token -> token": {
+      "js_us_median": 0.3344,
+      "rust_us_median": 3.2161,
+      "speedup_median": 0.104
+    },
+    "pipeline/few tokens, token -> token array": {
+      "js_us_median": 1.1908,
+      "rust_us_median": 8.1362,
+      "speedup_median": 0.146
+    },
+    "pipeline/many tokens, token -> token": {
+      "js_us_median": 8.0272,
+      "rust_us_median": 60.677,
+      "speedup_median": 0.132
+    },
+    "pipeline/many tokens, token -> token array": {
+      "js_us_median": 22.9869,
+      "rust_us_median": 149.51,
+      "speedup_median": 0.154
+    },
+    "query_parser/complex": {
+      "js_us_median": 1.5334,
+      "rust_us_median": 1.7533,
+      "speedup_median": 0.875
+    },
+    "query_parser/field": {
+      "js_us_median": 1.0746,
+      "rust_us_median": 1.4543,
+      "speedup_median": 0.739
+    },
+    "query_parser/modifier": {
+      "js_us_median": 1.0262,
+      "rust_us_median": 1.4147,
+      "speedup_median": 0.725
+    },
+    "query_parser/simple": {
+      "js_us_median": 0.6979,
+      "rust_us_median": 1.2111,
+      "speedup_median": 0.576
+    },
+    "search/contained wildcard": {
+      "js_us_median": 9.3378,
+      "rust_us_median": 20.643,
+      "speedup_median": 0.452
+    },
+    "search/edit distance": {
+      "js_us_median": 42.1408,
+      "rust_us_median": 147.05,
+      "speedup_median": 0.287
+    },
+    "search/leading wildcard": {
+      "js_us_median": 23.6877,
+      "rust_us_median": 77.024,
+      "speedup_median": 0.308
+    },
+    "search/multi term": {
+      "js_us_median": 16.6207,
+      "rust_us_median": 32.746,
+      "speedup_median": 0.508
+    },
+    "search/negated query": {
+      "js_us_median": 6.1174,
+      "rust_us_median": 13.246,
+      "speedup_median": 0.462
+    },
+    "search/required term": {
+      "js_us_median": 18.1894,
+      "rust_us_median": 32.879,
+      "speedup_median": 0.553
+    },
+    "search/single term": {
+      "js_us_median": 9.5568,
+      "rust_us_median": 17.73,
+      "speedup_median": 0.539
+    },
+    "search/trailing wildcard": {
+      "js_us_median": 11.7338,
+      "rust_us_median": 22.65,
+      "speedup_median": 0.518
+    },
+    "search/typeahead": {
+      "js_us_median": 17.4554,
+      "rust_us_median": 42.831,
+      "speedup_median": 0.408
+    },
+    "search/with field": {
+      "js_us_median": 7.5438,
+      "rust_us_median": 9.7221,
+      "speedup_median": 0.776
+    },
+    "stemmer": {
+      "js_us_median": 710.2273,
+      "rust_us_median": 981.09,
+      "speedup_median": 0.724
+    },
+    "token_set/fromArray": {
+      "js_us_median": 1149.4253,
+      "rust_us_median": 2120.8,
+      "speedup_median": 0.542
+    },
+    "token_set/fromFuzzyString": {
+      "js_us_median": 174.2464,
+      "rust_us_median": 713.84,
+      "speedup_median": 0.244
+    },
+    "token_set/fromString (no wildcard)": {
+      "js_us_median": 0.3514,
+      "rust_us_median": 1.9668,
+      "speedup_median": 0.179
+    },
+    "token_set/fromString (with wildcard)": {
+      "js_us_median": 0.2951,
+      "rust_us_median": 2.1546,
+      "speedup_median": 0.137
+    },
+    "token_set/intersect (no wildcard)": {
+      "js_us_median": 0.9313,
+      "rust_us_median": 3.8162,
+      "speedup_median": 0.244
+    },
+    "token_set/intersect (with wildcard)": {
+      "js_us_median": 8.0502,
+      "rust_us_median": 33.981,
+      "speedup_median": 0.237
+    },
+    "token_set/toArray": {
+      "js_us_median": 2.2635,
+      "rust_us_median": 12.467,
+      "speedup_median": 0.182
+    },
+    "tokenizer": {
+      "js_us_median": 14.5858,
+      "rust_us_median": 31.272,
+      "speedup_median": 0.466
+    },
+    "vector/dot": {
+      "js_us_median": 1.7535,
+      "rust_us_median": 0.7693,
+      "speedup_median": 2.279
+    },
+    "vector/similarity": {
+      "js_us_median": 1.8379,
+      "rust_us_median": 0.7736,
+      "speedup_median": 2.376
+    }
+  },
+  "wins_ge_1x": [
+    "build",
+    "vector/dot",
+    "vector/similarity"
+  ]
+}

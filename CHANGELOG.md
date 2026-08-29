@@ -8,6 +8,105 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Phase 11: Performance Optimization (2026-08-28)
+
+Delivered measurable **Rust-side improvements** over the Phase 9 baseline, but
+the Phase 11 goal — *a Rust port must not run slower than the JS reference it
+replaces* — is **NOT met**. On a 3×-repeated median (`perf/agg_run{1,2,3}.json`
+→ `perf/aggregate-median-2026-08-28.json`), Rust remains **slower than lunr.js on
+27 of 30 workloads**; it only wins on `build` (1.13×) and `vector/dot` (2.28×) /
+`vector/similarity` (2.38×). Every optimization below is a real, measured,
+defensible improvement, but do not read this entry as "gap closed vs JS" — the
+absolute Rust µs/op dropped substantially while the *relative-to-JS* gap on
+pipeline/stemmer/token_set/search/query_parser/tokenizer largely persists.
+
+Baseline snapshots: `perf/baseline-2026-08-28.json` (before) and
+`perf/baseline-opt-2026-08-28.json` (after).
+
+#### Update (2026-08-30) — stemmer + token_set rewrites land 5/30 wins (still NOT met)
+
+Two differential-verified rewrites landed and a fresh 3×-repeated run
+(`perf/agg2_run{1,2,3}.json` → `perf/aggregate-median-opt-2026-08-30.json`,
+corrected median-of-doubles) moved Rust from **3/30 to 5/30 wins** but the Phase
+11 goal is **still open** — the other 25 workloads remain below 1× vs JS.
+
+- **`src/stemmer.rs`** — full **byte-based rewrite**: `Vec<u8>` working buffer in
+  place of the previous char/`Vec<char>` + multiple-`String`-allocation steps;
+  `STEP2LIST`/`STEP3LIST` unchanged; `ends_cvc` and step1b use `is_vowel`
+  (incl. `y`); fixed `ends_with(b"bl")` → `ends_with(b"b")||ends_with(b"l")`.
+  Differentially verified byte-identical over 1000 words in
+  `tests/stemmer_parity.rs`. Result: stemmer **0.72× → 1.48×** (now beats JS).
+- **`src/token_set.rs`** — **char-keyed edges** (`HashMap<char, TokenSet>` +
+  `WILDCARD` `'*'` const) replacing String keys; `from_fuzzy_string` now uses an
+  owned `Vec<char>` `Frame` (no `'a` lifetime) and restores the original's
+  `if frame.chars.len() == 1 { frame.node.set_final(true) }`; removed erroneous
+  final-marking in the deletion branch. Differentially verified (structure +
+  accepted language) in `tests/token_set_parity.rs` over the wordlist. Results:
+  `fromArray` 0.54→0.84×, `fromFuzzyString` 0.24→0.53×, `intersect-nw` 0.24→
+  0.43×, `intersect-wildcard` 0.24→0.53× — all still < 1× vs JS.
+- **`src/pipeline.rs`** — `run()` pre-sizes the per-stage `memo` with
+  `Vec::with_capacity(tokens.len())`.
+- Tests: added `tests/token_set_parity.rs` (5 differential cases) and
+  `tests/stemmer_parity.rs` (2). Full suite green: 84 unit + 3 integration
+  parity + 2 stemmer + 5 token_set = 94.
+
+Rust-side per-op improvements (µs/op, from first-run baseline → current):
+
+| workload | before | after | Δ |
+|---|---|---|---|
+| pipeline/few token→token | 18.64 | 3.18 | ~6× |
+| pipeline/many token→token | 370.7 | 58.3 | ~6× |
+| pipeline/many token→token array | 2210.5 | 143.9 | ~15× |
+| token_set/intersect (no wildcard) | 19.6 | 3.7 | ~5× |
+| token_set/intersect (with wildcard) | 163.6 | 34.1 | ~5× |
+| builder/build | 451.1 | 187.9 | ~2.4× |
+| token_set/toArray | 15.2 | 11.3 | ~1.35× |
+| token_set/fromArray | 2397.8 | 2023.0 | ~1.2× |
+| token_set/fromFuzzyString | 812.9 | 702.8 | ~1.2× |
+| search/single term | 27.3 | 16.6 | ~1.6× |
+| search/leading wildcard | 105.3 | 72.8 | ~1.4× |
+| search/edit distance | 173.8 | 134.5 | ~1.3× |
+| stemmer | 3467.4 | 874.4 | ~4× |
+
+#### Changed
+
+- **`Cargo.toml`** — added `[profile.release]` (opt-level 3, `lto = "fat"`,
+  `codegen-units = 1`) and `[profile.bench]` (inherits release, `debug = true`,
+  `strip = false`). Free, global inlining/LTO win that was previously disabled.
+- **`src/stop_word_filter.rs`** — built-in `stop_word_filter` now dispatches
+  through a `match` over the stop-word list (`is_stop_word`) instead of a linear
+  slice scan; `#[inline(always)]`.
+- **`src/stemmer.rs`** — `STEP2LIST`/`STEP3LIST` moved from per-call `Vec<(String,
+  String)>` allocations to `const` static slices; `PorterStemmer` is now a
+  zero-sized unit struct. Removes ~28 String allocations per token on the hot
+  `stemmer` path (previously re-built on every call).
+- **`src/token_set.rs`** — `NEXT_ID.fetch_add` uses `Ordering::Relaxed` (single-
+  threaded, id only used for minimization dedup); inner loops (`to_array`,
+  `intersect`) iterate a cheap `edge_snapshot` `Vec` instead of allocating a full
+  `HashMap<String, TokenSet>` clone per frame.
+- **`benches/pipeline.rs`** — pipeline micro-suite now builds tokens with empty
+  metadata (`Token::new(word)`), matching lunr.js's `new lunr.Token(word)` perf
+  workload; previously it tokenized words and carried position/index
+  `HashMap`+serde metadata, which dominated the measurement with
+  allocator/clone overhead instead of pipeline-stage cost. All four bench closures
+  wrap input and output in `black_box` to prevent dead-code elimination.
+
+#### Remaining (deferred this phase)
+
+- **Tokenizer metadata path (11.4)** — not touched: position/index metadata is
+  required for search MatchData + serialized-index parity, so a term-only fast
+  path was left out to avoid changing output.
+- **TokenSet arena rewrite (11.5, full)** — per-node `Rc<RefCell>`+atomic id
+  remains; the safe subset (Relaxed ordering, edge-snapshot iteration) landed,
+  but a full index-arena rewrite was deferred to avoid risking the subtle
+  minimization/self-edge/intersect logic.
+- **Search rerun/reuse (11.6)** — improved indirectly via TokenSet wins; the
+  per-clause pipeline rerun mirrors lunr.js and was left as-is.
+
+---
+
+## [Unreleased]
+
 ### Phase 9: Performance Benchmark (2026-08-28)
 
 Side-by-side, measurement-grade perf comparison of `lunr.rs` vs `lunr.js` on the
