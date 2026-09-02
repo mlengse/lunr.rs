@@ -1,66 +1,124 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
-use std::sync::atomic::{AtomicUsize, Ordering};
-
-static NEXT_ID: AtomicUsize = AtomicUsize::new(1);
 
 const WILDCARD: char = '*';
 
-fn edge_snapshot(inner: &TokenSet) -> Vec<(char, TokenSet)> {
-    inner
-        .inner
-        .borrow()
-        .edges
-        .iter()
-        .map(|(k, v)| (*k, v.clone()))
-        .collect()
+/// Compact child edge list: kept sorted by `char` so lookups are a binary
+/// search and iteration is deterministic. Node degrees are tiny in practice
+/// (letter tries), so a `Vec` beats a per-node `HashMap` on both allocation
+/// and hashing cost.
+#[derive(Debug)]
+struct Edges {
+    pairs: Vec<(char, usize)>,
+}
+
+impl Edges {
+    fn new() -> Self {
+        Edges { pairs: Vec::new() }
+    }
+
+    #[inline]
+    fn get(&self, ch: char) -> Option<usize> {
+        self.pairs
+            .binary_search_by(|&(c, _)| c.cmp(&ch))
+            .ok()
+            .map(|i| self.pairs[i].1)
+    }
+
+    /// Insert an edge; if `ch` is already present its target is returned and
+    /// the caller should treat the edge as existing.
+    fn insert(&mut self, ch: char, target: usize) {
+        match self.pairs.binary_search_by(|&(c, _)| c.cmp(&ch)) {
+            Ok(i) => self.pairs[i].1 = target,
+            Err(i) => self.pairs.insert(i, (ch, target)),
+        }
+    }
+
+    fn contains(&self, ch: char) -> bool {
+        self.get(ch).is_some()
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct TokenSet {
-    inner: Rc<RefCell<TokenSetInner>>,
+    root: usize,
+    arena: Rc<RefCell<Vec<TokenSetNode>>>,
 }
 
 #[derive(Debug)]
-struct TokenSetInner {
+struct TokenSetNode {
     final_: bool,
-    edges: HashMap<char, TokenSet>,
-    id: usize,
-    _str: Option<String>,
+    edges: Edges,
+}
+
+fn collect_words(
+    arena: &[TokenSetNode],
+    node: usize,
+    prefix: &mut String,
+    words: &mut Vec<String>,
+) {
+    if arena[node].final_ {
+        words.push(prefix.clone());
+    }
+    for &(edge, next) in &arena[node].edges.pairs {
+        prefix.push(edge);
+        collect_words(arena, next, prefix, words);
+        prefix.pop();
+    }
+}
+
+fn get_or_insert_edge(arena: &mut Vec<TokenSetNode>, node: usize, ch: char) -> usize {
+    if let Some(target) = arena[node].edges.get(ch) {
+        target
+    } else {
+        let next = arena.len();
+        arena.push(TokenSetNode {
+            final_: false,
+            edges: Edges::new(),
+        });
+        arena[node].edges.insert(ch, next);
+        next
+    }
 }
 
 impl TokenSet {
-    pub fn new() -> Self {
+    pub fn builder() -> Builder {
+        Builder::new()
+    }
+
+    fn new() -> Self {
+        let arena = vec![TokenSetNode {
+            final_: false,
+            edges: Edges::new(),
+        }];
         TokenSet {
-            inner: Rc::new(RefCell::new(TokenSetInner {
-                final_: false,
-                edges: HashMap::new(),
-                id: NEXT_ID.fetch_add(1, Ordering::Relaxed),
-                _str: None,
-            })),
+            root: 0,
+            arena: Rc::new(RefCell::new(arena)),
         }
     }
 
     pub fn from_string(str: &str) -> Self {
-        let root = TokenSet::new();
-        let mut node = root.clone();
+        let ts = TokenSet::new();
+        {
+            let mut arena = ts.arena.borrow_mut();
+            let mut node = ts.root;
 
-        for (i, ch) in str.chars().enumerate() {
-            let is_final = i == str.len() - 1;
+            for (i, ch) in str.chars().enumerate() {
+                let is_final = i == str.len() - 1;
 
-            if ch == WILDCARD {
-                node.set_edge(WILDCARD, node.clone());
-                node.set_final(is_final);
-            } else {
-                let next = TokenSet::new();
-                next.set_final(is_final);
-                node.set_edge(ch, next.clone());
-                node = next;
+                if ch == WILDCARD {
+                    if !arena[node].edges.contains(WILDCARD) {
+                        arena[node].edges.insert(WILDCARD, node);
+                    }
+                    arena[node].final_ = is_final;
+                } else {
+                    node = get_or_insert_edge(&mut arena, node, ch);
+                    arena[node].final_ = is_final;
+                }
             }
         }
-
-        root
+        ts
     }
 
     pub fn from_array(arr: &[String]) -> Self {
@@ -81,26 +139,22 @@ impl TokenSet {
     }
 
     pub fn from_fuzzy_string(str: &str, edit_distance: usize) -> Self {
-        let root = TokenSet::new();
+        let ts = TokenSet::new();
         let chars: Vec<char> = str.chars().collect();
-        let mut stack = Vec::new();
-        stack.push(Frame {
-            node: root.clone(),
+        let mut stack = vec![Frame {
+            node: ts.root,
             edits_remaining: edit_distance,
             chars: chars.clone(),
-        });
+        }];
 
         while let Some(frame) = stack.pop() {
-            // no edit
+            let mut arena = ts.arena.borrow_mut();
+
             if let Some(&ch) = frame.chars.first() {
-                let no_edit_node = frame.node.get_edge(ch).unwrap_or_else(|| {
-                    let new_node = TokenSet::new();
-                    frame.node.set_edge(ch, new_node.clone());
-                    new_node
-                });
+                let no_edit_node = get_or_insert_edge(&mut arena, frame.node, ch);
 
                 if frame.chars.len() == 1 {
-                    no_edit_node.set_final(true);
+                    arena[no_edit_node].final_ = true;
                 }
 
                 stack.push(Frame {
@@ -114,15 +168,10 @@ impl TokenSet {
                 continue;
             }
 
-            // insertion (wildcard)
-            let insertion_node = frame.node.get_edge(WILDCARD).unwrap_or_else(|| {
-                let new_node = TokenSet::new();
-                frame.node.set_edge(WILDCARD, new_node.clone());
-                new_node
-            });
+            let insertion_node = get_or_insert_edge(&mut arena, frame.node, WILDCARD);
 
             if frame.chars.is_empty() {
-                insertion_node.set_final(true);
+                arena[insertion_node].final_ = true;
             }
 
             stack.push(Frame {
@@ -131,29 +180,23 @@ impl TokenSet {
                 chars: frame.chars.clone(),
             });
 
-            // deletion
             if frame.chars.len() > 1 {
                 stack.push(Frame {
-                    node: frame.node.clone(),
+                    node: frame.node,
                     edits_remaining: frame.edits_remaining - 1,
                     chars: frame.chars[1..].to_vec(),
                 });
             }
 
             if frame.chars.len() == 1 {
-                frame.node.set_final(true);
+                arena[frame.node].final_ = true;
             }
 
-            // substitution (wildcard)
             if !frame.chars.is_empty() {
-                let substitution_node = frame.node.get_edge(WILDCARD).unwrap_or_else(|| {
-                    let new_node = TokenSet::new();
-                    frame.node.set_edge(WILDCARD, new_node.clone());
-                    new_node
-                });
+                let substitution_node = get_or_insert_edge(&mut arena, frame.node, WILDCARD);
 
                 if frame.chars.len() == 1 {
-                    substitution_node.set_final(true);
+                    arena[substitution_node].final_ = true;
                 }
 
                 stack.push(Frame {
@@ -163,18 +206,12 @@ impl TokenSet {
                 });
             }
 
-            // transposition
             if frame.chars.len() > 1 {
                 let c0 = frame.chars[0];
                 let c1 = frame.chars[1];
 
-                let transpose_node = frame.node.get_edge(c1).unwrap_or_else(|| {
-                    let new_node = TokenSet::new();
-                    frame.node.set_edge(c1, new_node.clone());
-                    new_node
-                });
+                let transpose_node = get_or_insert_edge(&mut arena, frame.node, c1);
 
-                // remaining after swapping first two chars: c0 + rest
                 let mut remaining: Vec<char> = Vec::with_capacity(frame.chars.len());
                 remaining.push(c0);
                 remaining.extend_from_slice(&frame.chars[2..]);
@@ -186,62 +223,48 @@ impl TokenSet {
             }
         }
 
-        root
+        ts
     }
 
     pub fn to_array(&self) -> Vec<String> {
-        if self.get_edges().contains_key(&WILDCARD) {
+        let arena = self.arena.borrow();
+        if arena[self.root].edges.contains(WILDCARD) {
             panic!("cannot convert a TokenSet containing wildcards to an array");
         }
 
         let mut words = Vec::new();
-        let mut stack = vec![StackFrame {
-            prefix: String::new(),
-            node: self.clone(),
-        }];
-
-        while let Some(frame) = stack.pop() {
-            if frame.node.is_final() {
-                words.push(frame.prefix.clone());
-            }
-
-            for (edge, node) in edge_snapshot(&frame.node) {
-                let mut prefix = frame.prefix.clone();
-                prefix.push(edge);
-                stack.push(StackFrame { prefix, node });
-            }
-        }
-
+        let mut prefix = String::new();
+        collect_words(&arena, self.root, &mut prefix, &mut words);
         words
     }
 
     pub fn intersect(&self, b: &TokenSet) -> TokenSet {
         let output = TokenSet::new();
         let mut stack = vec![IntersectFrame {
-            q_node: b.clone(),
-            output: output.clone(),
-            node: self.clone(),
+            q_node: b.root,
+            output: output.root,
+            node: self.root,
         }];
 
+        // All three arenas are distinct RefCells; borrow them once for the
+        // whole walk instead of per frame.
+        let q_arena = b.arena.borrow();
+        let n_arena = self.arena.borrow();
+        let mut o_arena = output.arena.borrow_mut();
+
         while let Some(frame) = stack.pop() {
-            let q_edges = edge_snapshot(&frame.q_node);
-            let n_edges = edge_snapshot(&frame.node);
+            for &(q_edge, q_next) in &q_arena[frame.q_node].edges.pairs {
+                for &(n_edge, n_next) in &n_arena[frame.node].edges.pairs {
+                    if n_edge == q_edge || q_edge == WILDCARD {
+                        let final_ = n_arena[n_next].final_ && q_arena[q_next].final_;
+                        let next =
+                            get_or_insert_edge(&mut o_arena, frame.output, n_edge);
 
-            for (q_edge, q_node) in &q_edges {
-                for (n_edge, n_node) in &n_edges {
-                    if n_edge == q_edge || *q_edge == WILDCARD {
-                        let final_ = n_node.is_final() && q_node.is_final();
-                        let next = frame.output.get_edge(*n_edge).unwrap_or_else(|| {
-                            let new_node = TokenSet::new();
-                            frame.output.set_edge(*n_edge, new_node.clone());
-                            new_node
-                        });
-
-                        next.set_final(next.is_final() || final_);
+                        o_arena[next].final_ = o_arena[next].final_ || final_;
 
                         stack.push(IntersectFrame {
-                            node: n_node.clone(),
-                            q_node: q_node.clone(),
+                            node: n_next,
+                            q_node: q_next,
                             output: next,
                         });
                     }
@@ -249,77 +272,33 @@ impl TokenSet {
             }
         }
 
+        drop(o_arena);
         output
     }
 
-    fn is_final(&self) -> bool {
-        self.inner.borrow().final_
-    }
-
-    fn set_final(&self, val: bool) {
-        self.inner.borrow_mut().final_ = val;
-    }
-
-    fn get_edges(&self) -> HashMap<char, TokenSet> {
-        self.inner.borrow().edges.clone()
-    }
-
-    fn set_edge(&self, key: char, val: TokenSet) {
-        self.inner.borrow_mut().edges.insert(key, val);
-    }
-
-    fn get_edge(&self, key: char) -> Option<TokenSet> {
-        self.inner.borrow().edges.get(&key).cloned()
-    }
-
-    fn id(&self) -> usize {
-        self.inner.borrow().id
-    }
-
-    fn str_repr(&self) -> String {
-        if let Some(ref s) = self.inner.borrow()._str {
-            return s.clone();
-        }
-
-        let mut str = if self.is_final() { "1" } else { "0" }.to_string();
-        let mut edges: Vec<(char, TokenSet)> =
-            self.inner.borrow().edges.iter().map(|(k, v)| (*k, v.clone())).collect();
-        edges.sort_by_key(|(k, _)| *k);
-
-        for (label, node) in edges {
-            str.push(label);
-            str.push_str(&node.id().to_string());
-        }
-
-        str
-    }
-
-    fn set_str(&self, val: String) {
-        self.inner.borrow_mut()._str = Some(val);
-    }
-
-    /// Id-independent, cycle-safe structural signature (testing only).
+    /// Id-independent, cycle-safe structural fingerprint (testing only).
     #[doc(hidden)]
     pub fn __struct_fingerprint(&self) -> String {
-        fn walk(node: &TokenSet, on_path: &mut Vec<usize>) -> String {
-            let id = node.id();
-            if on_path.contains(&id) {
+        let arena = self.arena.borrow();
+        let mut visited = std::collections::HashSet::new();
+        fn walk(
+            node: usize,
+            arena: &[TokenSetNode],
+            visited: &mut std::collections::HashSet<usize>,
+        ) -> String {
+            if !visited.insert(node) {
                 return "CYCLE".to_string();
             }
-            on_path.push(id);
-            let mut s = if node.is_final() { "1" } else { "0" }.to_string();
-            let mut edges: Vec<(char, TokenSet)> =
-                node.inner.borrow().edges.iter().map(|(k, v)| (*k, v.clone())).collect();
-            edges.sort_by_key(|(k, _)| *k);
-            for (label, child) in &edges {
+            let mut s = if arena[node].final_ { "1" } else { "0" }.to_string();
+            for &(label, child) in &arena[node].edges.pairs {
                 s.push('L');
-                s.push(*label);
-                s.push_str(&walk(child, on_path));
+                s.push(label);
+                s.push_str(&walk(child, arena, visited));
             }
-            on_path.pop();
+            visited.remove(&node);
             s
         }
-        walk(self, &mut Vec::new())
+        walk(self.root, &arena, &mut visited)
     }
 }
 
@@ -329,27 +308,16 @@ impl Default for TokenSet {
     }
 }
 
-impl TokenSet {
-    pub fn builder() -> Builder {
-        Builder::new()
-    }
-}
-
 struct Frame {
-    node: TokenSet,
+    node: usize,
     edits_remaining: usize,
     chars: Vec<char>,
 }
 
-struct StackFrame {
-    prefix: String,
-    node: TokenSet,
-}
-
 struct IntersectFrame {
-    q_node: TokenSet,
-    output: TokenSet,
-    node: TokenSet,
+    q_node: usize,
+    output: usize,
+    node: usize,
 }
 
 pub struct Clause {
@@ -366,20 +334,21 @@ pub struct Builder {
     previous_word: String,
     pub root: TokenSet,
     unchecked_nodes: Vec<UncheckedNode>,
-    minimized_nodes: HashMap<String, TokenSet>,
+    minimized_nodes: HashMap<Vec<(char, usize)>, usize>,
 }
 
 struct UncheckedNode {
-    parent: TokenSet,
+    parent: usize,
     char: char,
-    child: TokenSet,
+    child: usize,
 }
 
 impl Builder {
     pub fn new() -> Self {
+        let root = TokenSet::new();
         Builder {
             previous_word: String::new(),
-            root: TokenSet::new(),
+            root,
             unchecked_nodes: Vec::new(),
             minimized_nodes: HashMap::new(),
         }
@@ -404,26 +373,25 @@ impl Builder {
         self.minimize(common_prefix);
 
         let mut node = if self.unchecked_nodes.is_empty() {
-            self.root.clone()
+            self.root.root
         } else {
-            self.unchecked_nodes.last().unwrap().child.clone()
+            self.unchecked_nodes.last().unwrap().child
         };
 
+        let mut arena = self.root.arena.borrow_mut();
         for i in common_prefix..word_chars.len() {
             let ch = word_chars[i];
-            let next_node = TokenSet::new();
-            node.set_edge(ch, next_node.clone());
+            let parent = node;
+            node = get_or_insert_edge(&mut arena, parent, ch);
 
             self.unchecked_nodes.push(UncheckedNode {
-                parent: node.clone(),
+                parent,
                 char: ch,
-                child: next_node.clone(),
+                child: node,
             });
-
-            node = next_node;
         }
 
-        node.set_final(true);
+        arena[node].final_ = true;
         self.previous_word = word.to_string();
     }
 
@@ -432,15 +400,24 @@ impl Builder {
     }
 
     fn minimize(&mut self, down_to: usize) {
+        let mut arena = self.root.arena.borrow_mut();
         while self.unchecked_nodes.len() > down_to {
-            let node = self.unchecked_nodes.pop().unwrap();
-            let child_key = node.child.str_repr();
+            let unchecked = self.unchecked_nodes.pop().unwrap();
+            let child_min_key = {
+                let child = &arena[unchecked.child];
+                let mut key: Vec<(char, usize)> = child.edges.pairs.clone();
+                key.sort_by_key(|(k, _)| *k);
+                let mut full_key = Vec::with_capacity(1 + key.len());
+                full_key.push((if child.final_ { '\x01' } else { '\x00' }, 0));
+                full_key.extend(key);
+                full_key
+            };
 
-            if let Some(minimized) = self.minimized_nodes.get(&child_key) {
-                node.parent.set_edge(node.char, minimized.clone());
+            if let Some(&minimized) = self.minimized_nodes.get(&child_min_key) {
+                arena[unchecked.parent].edges.insert(unchecked.char, minimized);
             } else {
-                node.child.set_str(child_key.clone());
-                self.minimized_nodes.insert(child_key, node.child.clone());
+                self.minimized_nodes
+                    .insert(child_min_key, unchecked.child);
             }
         }
     }
@@ -452,12 +429,6 @@ impl Default for Builder {
     }
 }
 
-impl std::fmt::Display for TokenSet {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{}", self.str_repr())
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -465,8 +436,9 @@ mod tests {
     #[test]
     fn test_from_string() {
         let ts = TokenSet::from_string("test");
-        assert!(ts.get_edges().contains_key(&'t'));
-        assert!(!ts.is_final());
+        let arena = ts.arena.borrow();
+        assert!(arena[ts.root].edges.contains('t'));
+        assert!(!arena[ts.root].final_);
     }
 
     #[test]

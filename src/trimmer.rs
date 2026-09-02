@@ -19,19 +19,28 @@ fn is_word_char(c: char) -> bool {
 
 pub fn trimmer(token: Token) -> PipelineResult {
     let term = &token.term;
-    let chars: Vec<char> = term.chars().collect();
-    let start = chars.iter().position(|&c| is_word_char(c)).unwrap_or(chars.len());
-    let end = chars.iter().rposition(|&c| is_word_char(c)).map(|i| i + 1).unwrap_or(0);
 
-    if start >= end {
-        return PipelineResult::None;
-    }
+    // Fast path: if the whole term is already word characters (the common case
+    // for tokenizer output), return it unchanged without any allocation.
+    if let Some((s, _)) = term.char_indices().find(|&(_, c)| is_word_char(c)) {
+        let e = term
+            .char_indices()
+            .rev()
+            .find(|&(_, c)| is_word_char(c))
+            .map(|(i, c)| i + c.len_utf8())
+            .unwrap_or(0);
 
-    let trimmed: String = chars[start..end].iter().collect();
+        if s == 0 && e == term.len() {
+            return PipelineResult::Token(token);
+        }
 
-    if trimmed.is_empty() {
-        PipelineResult::None
+        let trimmed = term[s..e].to_string();
+        if trimmed.is_empty() {
+            PipelineResult::None
+        } else {
+            PipelineResult::Token(Token { term: trimmed, metadata: token.metadata })
+        }
     } else {
-        PipelineResult::Token(Token { term: trimmed, metadata: token.metadata })
+        PipelineResult::None
     }
 }

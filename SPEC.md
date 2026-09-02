@@ -55,7 +55,7 @@ src/
 ├── field_ref.rs         # FieldRef (joiner "/", fromString, serialize, Display)
 ├── set.rs               # Set (Empty, Complete, union, intersect, contains)
 ├── idf.rs               # idf(posting, document_count) -> f64
-├── token.rs             # Token (term, metadata, update, clone) + Tokens + tokenizer (NFC, separator, position)
+├── token.rs             # Token (term, metadata, update, clone) + Tokens + tokenizer (NFC, separator)
 ├── pipeline.rs          # Pipeline + PipelineFunction enum (Trimmer, StopWordFilter, Stemmer)
 ├── vector.rs            # Vector (BTreeMap, insert, upsert, dot, magnitude, similarity)
 ├── stemmer.rs           # Porter stemmer (English, default)
@@ -83,7 +83,9 @@ src/
 - Input array → each element `to_string().normalize(NFC).to_lowercase()` becomes a `Token`.
 - Input string → `normalize(NFC).to_lowercase()`, split on separator `[\s-]+`.
 - Empty tokens discarded.
-- Position metadata: `{"position": [start, length], "index": token_index}`.
+- Tokens carry no per-token metadata: lunr.js v2.3.9's default `metadataWhitelist`
+  is empty, so the serialized inverted index stores `{}` per document reference
+  (verified byte-level against the lunr.js-generated `ref-index.json` fixture).
 - `tokenizer.separator` is configurable via `Builder::tokenizer_separator(&str)`,
   a set of delimiter characters (default `" \t\r\n\v\f-"`). Implemented with the
   `unicode-normalization` crate (`Tokenizer::tokenize` composes via NFC).
@@ -313,8 +315,8 @@ Parser rules:
   "invertedIndex": [
     ["term", {
       "_index": 0,
-      "title": { "docRef": { "position": [[0, 5]] } },
-      "body": { "docRef": { "position": [[12, 5]] } }
+      "title": { "docRef": {} },
+      "body": { "docRef": {} }
     }]
   ],
   "pipeline": ["trimmer", "stopWordFilter", "stemmer"],
@@ -403,7 +405,7 @@ lunr.js has 540 tests across: `builder`, `field_ref`, `idf`, `index`, `lunr`,
 |---|---|---|
 | `field_ref` | **OK** | `fromString`, `JOINER` const, `Display` impl, `to_ref_string()` |
 | `token` | **OK** | `update()`, `clone()`, `clone_with()`, `Display`. `Metadata` = `serde_json::Value` |
-| `tokenizer` | **OK** | NFC-normalize + lowercase, split on configurable separator with position metadata |
+| `tokenizer` | **OK** | NFC-normalize + lowercase, split on configurable separator. ASCII fast path; no per-token metadata (matches lunr.js default `metadataWhitelist`) |
 | `vector` | **OK** | `BTreeMap` sparse vector with `insert`, `upsert`, `dot`, `magnitude` (Cell-cached), `similarity` (asymmetric). `from_elements` for deserialization |
 | `inverted_index` | **OK** | Correct shape, `document_count()`, `terms()`, `field_posting()`, `add_posting_raw()` for load. `FieldPosting` public |
 | `builder` | **OK** | IDF + BM25 correct, shared idf module, validation added, pipeline wired. `field()` with `FieldOpts`, `b()`/`k1()` setters, `search_pipeline`, `use_plugin()`, `ref_field()` (default "id"), `tokenizer_separator()` |

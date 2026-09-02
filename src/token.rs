@@ -55,39 +55,43 @@ impl Tokenizer {
     }
 
     /// Tokenize `text` into a sequence: NFC-normalize, lowercase, then split
-    /// on the configured separator set, recording position metadata.
+    /// on the configured separator set.
     pub fn tokenize(&self, text: &str) -> Tokens {
-        let normalized: String = text.nfc().collect::<String>().to_lowercase();
+        // Fast path: pure ASCII needs no NFC normalization (identity on
+        // ASCII), so skip the unicode_normalization machinery entirely.
+        if text.is_ascii() {
+            return self.tokenize_ascii(text);
+        }
+        // NFC-normalize and lowercase in a single pass so only one String is
+        // allocated for the whole corpus (previously two: NFC result, then
+        // to_lowercase result).
+        let normalized: String = text.nfc().flat_map(char::to_lowercase).collect();
+        self.split(&normalized)
+    }
+
+    fn tokenize_ascii(&self, text: &str) -> Tokens {
+        let lower = text.to_ascii_lowercase();
+        self.split(&lower)
+    }
+
+    /// Split a normalized (already NFC'd + lowercased) string on the configured
+    /// separator set.
+    fn split(&self, normalized: &str) -> Tokens {
         let mut tokens = Vec::new();
         let mut start = 0;
-        let mut index = 0;
+        let len = normalized.len();
 
         for (end, ch) in normalized.char_indices() {
             if self.is_separator(ch) {
                 if end > start {
-                    let term = normalized[start..end].to_string();
-                    let mut metadata = HashMap::new();
-                    metadata.insert("position".to_string(), Value::Array(vec![
-                        Value::Number(start.into()),
-                        Value::Number((end - start).into()),
-                    ]));
-                    metadata.insert("index".to_string(), Value::Number(index.into()));
-                    tokens.push(Token { term, metadata });
-                    index += 1;
+                    tokens.push(Token::new(&normalized[start..end]));
                 }
                 start = end + ch.len_utf8();
             }
         }
 
-        if start < normalized.len() {
-            let term = normalized[start..].to_string();
-            let mut metadata = HashMap::new();
-            metadata.insert("position".to_string(), Value::Array(vec![
-                Value::Number(start.into()),
-                Value::Number((normalized.len() - start).into()),
-            ]));
-            metadata.insert("index".to_string(), Value::Number(index.into()));
-            tokens.push(Token { term, metadata });
+        if start < len {
+            tokens.push(Token::new(&normalized[start..len]));
         }
 
         Tokens(tokens)

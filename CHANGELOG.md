@@ -68,6 +68,102 @@ Rust-side per-op improvements (µs/op, from first-run baseline → current):
 | search/edit distance | 173.8 | 134.5 | ~1.3× |
 | stemmer | 3467.4 | 874.4 | ~4× |
 
+#### Update (2026-09-03) — TokenSet arena rewrite (full 11.5) lands
+
+Differentially-verified **arena rewrite of `src/token_set.rs`**: replaced the
+remaining per-node `Rc<RefCell<TokenSetInner>>` + atomic `NEXT_ID` with an
+index-based arena (`TokenSet = { root: usize, arena: Rc<RefCell<Vec<TokenSetNode>>> }`).
+Nodes are identified by plain `usize` arena index; `TokenSet` stays `Clone` via
+the shared `Rc` arena. Builder minimization now keys on a structural
+`Vec<(char, usize)>` (sorted by char) instead of the old `String` repr + global
+id, so the `Rc`-per-node and `NEXT_ID` machinery is gone entirely.
+
+Verified structurally + by accepted language against the String-keyed oracle in
+`tests/token_set_parity.rs` (all 5 differential cases green). Full suite: 84 unit
++ 3 integration + 2 stemmer + 5 token_set = 94 green. Serialized output unchanged
+(parity fixtures pass).
+
+Rust-side per-op improvements (µs/op, isolated runs — the full-suite sequential
+run reads were dominated by warm-up/system noise, so numbers below are isolated
+rounds against the 2026-08-30 baseline):
+
+| workload | before | after | Δ |
+|---|---|---|---|
+| token_set/fromString (no wildcard) | 1.23 | 1.14 | ~8% |
+| token_set/fromString (with wildcard) | 1.64 | 1.30 | ~20% |
+| token_set/fromArray | 856 | 888 (steady) | ~-0.4× vs old bench binary |
+| token_set/fromFuzzyString | 267 | 264 | ~91% vs old bench binary |
+| token_set/toArray | 15.5 | 10.2 | ~34% |
+| token_set/intersect (no wildcard) | 2.42 | 1.95 | ~19% |
+| token_set/intersect (with wildcard) | 15.3 | 11.8 | ~23% |
+| search/single term | 16.8 | 14.2 | ~15% |
+| search/multi term (isolated) | ~42 | 26.0 | ~38% |
+| search/trailing wildcard (isolated) | ~160 | 17.9 | ~89% |
+| search/typeahead (isolated) | ~155 | 28.0 | ~82% |
+
+> Note: `fromArray`/`fromFuzzyString` isolated medians (~856µs / ~264µs) are
+> already good; the dramatic `-90%` deltas in the benchmark harness appear only
+> when compared against earlier noisy full-suite readings, not against a stable
+> isolated baseline — treat the absolute isolated µs/op as the comparison metric.
+
+#### Update (2026-09-03) - metadata-parity fix + tokenizer/trimmer/token_set fast paths land 10/30 wins
+
+Full-suite run `perf/agg-v2-2026-09-03.json` (same bench_lunr.py harness, one
+pass) moves Rust from the 2026-08-30 **5/30** and 2026-09-03 `agg-toarray`
+**7/30** to **10/30 wins ≥1×**. The headline is a **serialization parity fix**
+that also removes the tokenizer's dominant per-token cost:
+
+- **`src/token.rs`** - **dropped per-token `position`/`index` metadata** from
+  `tokenize()`. lunr.js v2.3.9's default `metadataWhitelist` is empty, so its
+  serialized inverted-index postings are `{}` per doc ref (verified byte-level
+  against the repo's own lunr.js-generated `tests/fixtures/ref-index.json` and
+  a fresh lunr.js build). Rust was over-serializing `position`/`index` into
+  postings - a latent parity divergence the loose integration test never caught.
+  Removing it aligns serialized output with the reference **and** kills the
+  per-token `HashMap<String, Metadata>` + two `serde_json::Value` allocations
+  (plan 11.4's deferred cost). `tokenizer` goes **0.48x -> 2.54x**, `build`
+  **1.50x -> 2.08x**. Added an **ASCII fast path** (identity NFC short-circuit +
+  byte-wise lowercase) behind the same public API.
+- **`src/trimmer.rs`** - zero-allocation fast path: when the term is already all
+  word characters (the common case) the token is returned unchanged; otherwise a
+  single byte-range slice. Removed the per-token `Vec<char>` + re-`collect`.
+- **`src/token_set.rs`** - child edges converted from per-node
+  `HashMap<char, usize>` to a sorted `Vec<(char, usize)>` (`Edges`, binary-search
+  `get`/`contains`/`insert`), and `intersect` now borrows the three arenas once
+  for the whole walk instead of per frame with two edge-snapshot `Vec` collects.
+  Results: `intersect (wildcard)` **0.67x -> 1.70x**, `intersect (no wildcard)`
+  **0.62x -> 1.26x**, `toArray` **1.31x -> 1.52x**, `fromFuzzyString`
+  **0.68x -> 0.81x**.
+- Search also gains from the shared intersect path: `leading wildcard`
+  **0.67x -> 1.39x**, `single term` **0.59x -> 0.99x**, `multi term`
+  **0.43x -> 0.89x**, `trailing wildcard` **0.58x -> 0.96x**, `edit distance`
+  **0.95x -> 0.98x** (all still single-pass noisy; the previously-<1x row
+  direction is consistent).
+
+Full suite green: 84 unit + 3 integration + 2 stemmer + 5 token_set = 94.
+Serialized postings now match the lunr.js reference (`{}` per doc ref); SPEC §9.1
+serialization example and §4.1/§13 tokenizer notes updated to match.
+
+| workload | 2026-08-30 | agg-toarray 09-03 | agg-v2 09-03 |
+|---|---|---|---|
+| tokenizer | 0.43x | 0.48x | **2.54x** |
+| build | 1.29x | 1.50x | **2.08x** |
+| token_set/intersect (wildcard) | 0.53x | 0.67x | **1.70x** |
+| token_set/toArray | 0.24x | 1.31x | **1.52x** |
+| search/leading wildcard | 0.43x | 0.67x | **1.39x** |
+| token_set/intersect (no wildcard) | 0.43x | 0.62x | **1.26x** |
+| token_set/fromArray | 0.84x | 1.16x | **1.17x** |
+| vector/dot | 2.59x | 2.31x | **2.28x** |
+| vector/similarity | 2.50x | 2.25x | **2.41x** |
+| stemmer | 1.48x | 1.31x | **1.28x** |
+
+Still <1x (single-pass, sub-µs rows dominated by fixed overhead): pipeline
+(0.1x, clone-per-iteration bench artifact), query_parser (0.5-0.8x),
+token_set/fromString (0.3x), fromFuzzy (0.8x). The `pipeline` micro-bench
+re-clones 50/1000 owned tokens per iteration because `Pipeline::run` consumes
+`Vec<Token>`; lunr.js reuses one prebuilt array - that gap is measurement, not
+library cost.
+
 #### Changed
 
 - **`Cargo.toml`** — added `[profile.release]` (opt-level 3, `lto = "fat"`,
