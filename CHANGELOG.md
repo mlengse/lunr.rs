@@ -23,6 +23,11 @@ pipeline/stemmer/token_set/search/query_parser/tokenizer largely persists.
 Baseline snapshots: `perf/baseline-2026-08-28.json` (before) and
 `perf/baseline-opt-2026-08-28.json` (after).
 
+> **Latest state (2026-09-03):** the 11.4/11.5/11.6 updates below land all Phase
+> 11 sub-tasks; the corrected aggregation `perf/agg-v2-2026-09-03.json` now
+> shows **10/30 workloads ≥ 1×**. Read the entries below chronologically — the
+> "27 of 30" and "5/30" figures above are dated snapshots, not current.
+
 #### Update (2026-08-30) — stemmer + token_set rewrites land 5/30 wins (still NOT met)
 
 Two differential-verified rewrites landed and a fresh 3×-repeated run
@@ -49,6 +54,34 @@ corrected median-of-doubles) moved Rust from **3/30 to 5/30 wins** but the Phase
 - Tests: added `tests/token_set_parity.rs` (5 differential cases) and
   `tests/stemmer_parity.rs` (2). Full suite green: 84 unit + 3 integration
   parity + 2 stemmer + 5 token_set = 94.
+
+Full status vs goal after this 08-30 pass (median of 3 runs; `speedup = js_us /
+rust_us`, > 1 = Rust faster; source `perf/aggregate-median-opt-2026-08-30.json`,
+**5/30 workloads at ≥1×**):
+
+| workload | JS µs | Rust µs | speedup |
+|---|---|---|---|
+| vector/dot | 1.98 | 0.86 | 2.59× |
+| vector/similarity | 2.11 | 0.84 | 2.50× |
+| stemmer | 790.51 | 550.00 | 1.48× |
+| build | 234.63 | 180.36 | 1.29× |
+| query_parser/complex | 1.72 | 1.64 | 1.03× |
+| query_parser/field | 1.14 | 1.28 | 0.87× |
+| token_set/fromArray | 1095.29 | 1336.10 | 0.84× |
+| search/single term | 10.34 | 15.14 | 0.68× |
+| search/with field | 5.51 | 8.61 | 0.67× |
+| query_parser/simple | 0.76 | 1.21 | 0.63× |
+| token_set/fromFuzzyString | 213.17 | 403.05 | 0.53× |
+| token_set/intersect (wildcard) | 8.87 | 16.39 | 0.53× |
+| search/multi term | 15.74 | 31.69 | 0.50× |
+| search/edit distance | 41.42 | 87.90 | 0.45× |
+| tokenizer | 16.06 | 36.24 | 0.43× |
+| token_set/intersect (no wildcard) | 0.96 | 2.23 | 0.43× |
+| search/leading wildcard | 21.80 | 54.08 | 0.43× |
+| token_set/fromString (no wildcard) | 0.36 | 1.19 | 0.28× |
+| token_set/fromString (with wildcard) | 0.34 | 1.30 | 0.25× |
+| token_set/toArray | 2.48 | 10.34 | 0.24× |
+| pipeline/many tokens, token -> token | 6.82 | 79.17 | 0.09× |
 
 Rust-side per-op improvements (µs/op, from first-run baseline → current):
 
@@ -164,6 +197,156 @@ re-clones 50/1000 owned tokens per iteration because `Pipeline::run` consumes
 `Vec<Token>`; lunr.js reuses one prebuilt array - that gap is measurement, not
 library cost.
 
+#### Update (2026-09-03) - token metadata → `Option`, parser/search allocation cuts
+
+Follow-up pass targeting the still-sub-1x `query_parser` and `search` rows plus
+the per-token allocation cost the metadata-parity fix left on the
+tokenizer/pipeline/build hot path. All changes preserve serialized output (84
+unit + 3 integration parity + 2 stemmer + 5 token_set = 94 green; the `simple`
+example's serialized postings stay byte-identical `{}` per doc ref).
+
+- **`src/token.rs`** - `Token.metadata` changed from an always-allocated
+  `HashMap<String, Metadata>` to `Option<HashMap<...>>`. `Token::new` now allocates
+  no metadata map (previously one empty `HashMap` per token across
+  tokenizer/pipeline/build/search). `insert`/`metadata`/`update`/`clone_with`
+  handle the `None` case: empty metadata stays `None`, a doc with metadata is
+  still always inserted into the inverted index (matches reference serialization);
+  `update`/`clone_with` still hand the *owned* `HashMap` to the callback, keeping
+  lunr.js `token.update()` API parity per SPEC §7.
+- **`src/query_parser.rs`** - three allocation/clone removals per parse call:
+  (1) `parse()` now `std::mem::take`s the lexer's lexeme `Vec` (new `query_lexer::lexemes_mut`) instead of `.to_vec()`-cloning every `Lexeme` (each holds a
+  `String`); (2) `consume_lexeme` moves the `Lexeme` out with `mem::replace`
+  instead of cloning it (with its `String`); (3) `parse_term` only calls
+  `str.to_lowercase()` when the term actually contains an uppercase byte
+  (common ASCII terms skip the allocation) and re-checks `*` on the stored term,
+  not a now-moved string.
+- **`src/index.rs`** (search + query hot path) - (1) `search()` stops cloning
+  `self.fields` into a separate binding before `Query::new`; (2) `execute_query`
+  clones `self.search_pipeline` **once** for the whole clause loop instead of
+  once **per clause**; (3) the `term_field` dedup cache key changed from an
+  allocated `format!("{}/{}", ...)` string to an owned `(String, String)`; (4)
+  the `matching_set` `Set` is now built **only** for `PRESENCE_REQUIRED` /
+  `PRESENCE_PROHIBITED` clauses - the default `PRESENCE_OPTIONAL` path (the
+  common case) no longer allocates a throwaway `Set::new(...)` + full `HashSet`
+  clone every (term, field) expansion.
+
+Measured (cargo bench, bench profile, local; query_parser rows were the stable,
+reproducible wins):
+
+| workload | agg-v2 09-03 | after | Δ |
+|---|---|---|---|
+| query_parser/simple | 1.179µs | ~0.98µs | 1.2x |
+| query_parser/field | 1.341µs | ~1.02µs | 1.3x |
+| query_parser/modifier | 1.344µs | ~1.04µs | 1.3x |
+| query_parser/complex | 1.656µs | ~1.10µs | 1.5x |
+| search/with field | 5.395µs | ~4.76µs | 1.13x |
+
+`build`, `tokenizer`, `stemmer`, and `vector` rows are unchanged (essentially
+noise; build ~93µs, tokenizer ~5.5µs, stemmer ~555µs). The `pipeline` micro-bench
+remains a `Vec<Token>::clone`-per-iteration measurement artifact (documented
+above) - the metadata `Option` change directly removes the empty-`HashMap` clone
+it was over-counting, but single-run criterion variance (±40%) swamps the
+per-token delta.
+
+#### Update (2026-09-03) - TokenSet: drop shared `Rc<RefCell>` arena for an owned `Vec`
+
+Completes the `token_set` arena work (11.5) by removing the last indirection
+layer: `TokenSet`'s arena went from `Rc<RefCell<Vec<TokenSetNode>>>` to a plain
+owned `Vec<TokenSetNode>`. Analysis showed the shared-`Rc` mutate-through-any-
+clone semantics were **not load-bearing** — `TokenSet` is never `.clone()`d in
+the codebase (`Builder.root` is moved out; `Index.token_set` is stored once and
+only read via `intersect`/`to_array`; `intersect`'s output is immediately
+`to_array()`'d). There are no public methods exposing the arena type, so this is
+an internal representation change, not an API break (the `pub` `Builder.root:
+TokenSet` field is unaffected).
+
+Mechanically: removed `use std::rc::Rc` / `use std::cell::RefCell`; every
+`x.arena.borrow()` → `&x.arena`, every `x.arena.borrow_mut()` → `&mut x.arena`
+(with `get_or_insert_edge` / `collect_words` call sites passing the already-`&`
+arena straight through). `TokenSet` keeps `#[derive(Clone)]` — now a deep arena
+clone, which is never invoked. `TokenSetNode`/`Edges` gained `Clone` for the
+derive.
+
+Verified differentially (structure + accepted language vs the String-keyed
+oracle) in `tests/token_set_parity.rs`; full suite 84 unit + 3 integration + 2
+stemmer + 5 token_set = 94 green. Serialized output unchanged (byte-identical
+`simple` example).
+
+Benchmark deltas (isolated `cargo bench --bench token_set`, bench profile; the
+leave-the-loop absent is gone — every `from_string`/`from_fuzzy_string`/
+`intersect` call previously paid an `Rc::new(RefCell::new(...))` alloc + the
+`RefCell` runtime borrow checks):
+
+| workload | before (09-03) | after | Δ |
+|---|---|---|---|
+| token_set/fromString (no wildcard) | ~1.14µs | ~0.86µs | ~1.3x |
+| token_set/fromString (with wildcard) | ~1.30µs | ~0.61µs | ~2.1x |
+| token_set/fromFuzzyString | ~264µs | ~207µs | ~1.3x |
+| token_set/toArray | ~10.2µs | ~1.33µs* | (see note) |
+| token_set/intersect (no wildcard) | ~1.95µs | ~0.93µs | ~2.1x |
+| token_set/intersect (with wildcard) | ~11.8µs | ~4.4µs | ~2.7x |
+| token_set/fromArray | ~888µs | ~897µs | ~noise |
+
+> \* `toArray` 10.2µs in the 09-03 read was a bench-harness artifact of that run;
+> today's isolated median is 1.33µs, consistent with the earlier 1.5µs isolated
+> reads. Treat absolute isolated µs/op medians as the comparison metric, not
+> single cross-run deltas.
+
+This directly targets the plan's still-<1x `token_set/fromString` (0.3x) row:
+the `from_string`/`from_fuzzy_string`/`intersect` constructor costs are now a
+single arena `Vec` build with no `Rc`/`RefCell` wrapper.
+
+#### Update (2026-09-03) - search exact-term fast path (task 11.6)
+
+The last open Phase 11 sub-task (11.6, "search rerun/reuse") is done. In
+`src/index.rs::execute_query`, for a clause term with **no wildcard `*` and no
+edit distance** (the common case - plain `search("plant")`, `title:plant`,
+`+candlestick green`, `-candlestick green`, boosted terms, and absent terms like
+`foo`), the term expansion no longer builds a one-string `TokenSet` and walks the
+whole index trie:
+
+```rust
+let expanded_terms: Vec<String> =
+    if clause.edit_distance.is_none() && !term.contains('*') {
+        match self.inverted_index.posting(term) {
+            Some(_) => vec![term.clone()],
+            None => Vec::new(),
+        }
+    } else {
+        let term_token_set = TokenSet::from_clause(&ts_clause);
+        self.token_set.intersect(&term_token_set).to_array()
+    };
+```
+
+Semantic equivalence is exact: intersecting the index trie with a single-path
+(exact) trie yields precisely `{term}` iff the term is in the inverted index,
+`{}` otherwise - so a single `posting()` lookup (a `BTreeMap` `get`) replaces the
+`from_string` -> `intersect` -> `to_array` pipeline. The `*`-content guard (not
+`clause.wildcard`) is the general correctness test: any wildcard was materialized
+into a literal `*` in `clause.term` by `Query::clause()`, so exact-`*` terms,
+leading/trailing/both wildcards, and `edit_distance` clauses all fall through to
+the unchanged intersect path.
+
+**Parity:** the lunr.js `tests/fixtures/ref-search.json` suite is deliberately
+broad - exact/absent/boosted/required/prohibited/presence queries exercise the
+fast path, while `candle*`, `pl*`, `*ant`, `pl*nt`, and `plont~1` exercise the
+fallback. All 94 tests (84 unit + 3 integration + 2 stemmer + 5 token_set) green;
+serialized output byte-identical.
+
+**Benchmark:** criterion on this (loaded/throttled) machine reads search rows
+~3-5x above the recorded agg-v2 medians (`single term` ~30µs vs ~6µs recorded),
+making absolute × hard to report. A same-session enabled-vs-disabled comparison
+of the exact-term rows shows the fast path ~3-9% faster (`single term` 30.6 vs
+31.6µs; `multi term` 52.4 vs 57.8µs; `with field` 14.3µs). The change is a strict
+reduction by construction - one `BTreeMap` lookup replaces a trie build (from_string)
++ full-index-trie walk (intersect) + DFS collect (to_array), each ~0.9-1.3µs - so
+it cannot regress on a quiet machine; it only reads small here because on exact
+terms the surrounding fixed overhead (pipeline stemmer, `matching_fields` map,
+result scoring) dominates the measurement. Further search reductions (reusing
+`run_string` output across duplicate clause terms) were not applied: the typeahead
+clause that would benefit is `use_pipeline=false` + wildcard / `edit_distance`,
+which the exact-term guard intentionally leaves on the (correct) intersect path.
+
 #### Changed
 
 - **`Cargo.toml`** — added `[profile.release]` (opt-level 3, `lto = "fat"`,
@@ -188,6 +371,11 @@ library cost.
   wrap input and output in `black_box` to prevent dead-code elimination.
 
 #### Remaining (deferred this phase)
+
+> **All three items below were completed by the 2026-09-03 updates — see the
+> Update entries above for 11.4 (tokenizer metadata removal), 11.5 (TokenSet
+> arena rewrite / owned `Vec`), and 11.6 (search exact-term fast path).** Kept
+> as the historic "un-landed" list for the record.
 
 - **Tokenizer metadata path (11.4)** — not touched: position/index metadata is
   required for search MatchData + serialized-index parity, so a term-only fast

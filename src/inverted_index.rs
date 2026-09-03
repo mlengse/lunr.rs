@@ -146,9 +146,10 @@ pub struct FieldPosting {
 impl FieldPosting {
     fn insert(&mut self, document_ref: String, token: Token) {
         let metadata = self.documents.entry(document_ref).or_insert_with(HashMap::new);
-
-        for (key, value) in token.metadata {
-            metadata.entry(key).or_insert_with(Vec::new).push(value);
+        if let Some(md) = token.metadata {
+            for (key, value) in md {
+                metadata.entry(key).or_insert_with(Vec::new).push(value);
+            }
         }
     }
 

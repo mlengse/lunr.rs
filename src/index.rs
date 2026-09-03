@@ -50,8 +50,7 @@ pub struct Index {
 
 impl Index {
     pub fn search(&mut self, query_string: &str) -> Vec<SearchResult> {
-        let fields = self.fields.clone();
-        let query = Query::new(fields);
+        let query = Query::new(self.fields.clone());
         let parser = QueryParser::new(query_string, query);
         let query = match parser.parse() {
             Ok(q) => q,
@@ -67,7 +66,7 @@ impl Index {
     fn execute_query(&mut self, query: Query) -> Vec<SearchResult> {
         let mut matching_fields: HashMap<String, MatchData> = HashMap::new();
         let mut query_vectors: HashMap<String, Vector> = HashMap::new();
-        let mut term_field_cache: HashMap<String, bool> = HashMap::new();
+        let mut term_field_cache: HashMap<(String, String), bool> = HashMap::new();
         let mut required_matches: HashMap<String, Set> = HashMap::new();
         let mut prohibited_matches: HashMap<String, Set> = HashMap::new();
 
@@ -75,9 +74,9 @@ impl Index {
             query_vectors.insert(field.clone(), Vector::new());
         }
 
+        let mut search_pipeline = self.search_pipeline.clone();
         for clause in &query.clauses {
             let terms = if clause.use_pipeline {
-                let mut search_pipeline = self.search_pipeline.clone();
                 search_pipeline.run_string(&clause.term)
             } else {
                 vec![clause.term.clone()]
@@ -96,8 +95,22 @@ impl Index {
                     fields: None,
                 };
 
-                let term_token_set = TokenSet::from_clause(&ts_clause);
-                let expanded_terms = self.token_set.intersect(&term_token_set).to_array();
+                // Fast path: an exact term (no wildcard `*`, no edit distance)
+                // expands to at most {term}. Skip building a one-string TokenSet
+                // and walking the whole index trie - a single inverted-index
+                // lookup is semantically identical (the intersect of the index
+                // trie with a single-path trie yields exactly `term` iff it is
+                // present, `{}` otherwise).
+                let expanded_terms: Vec<String> =
+                    if clause.edit_distance.is_none() && !term.contains('*') {
+                        match self.inverted_index.posting(term) {
+                            Some(_) => vec![term.clone()],
+                            None => Vec::new(),
+                        }
+                    } else {
+                        let term_token_set = TokenSet::from_clause(&ts_clause);
+                        self.token_set.intersect(&term_token_set).to_array()
+                    };
 
                 if expanded_terms.is_empty() && clause.presence == query::PRESENCE_REQUIRED {
                     for field in &clause.fields {
@@ -124,11 +137,10 @@ impl Index {
                             .map(|s| s.to_string())
                             .collect();
 
-                        let term_field = format!("{}/{}", expanded_term, field);
-
-                        let matching_set = Set::new(matching_doc_refs.clone());
+                        let term_field = (expanded_term.clone(), field.clone());
 
                         if clause.presence == query::PRESENCE_REQUIRED {
+                            let matching_set = Set::new(matching_doc_refs.clone());
                             clause_matches = clause_matches.union(&matching_set);
 
                             if !required_matches.contains_key(field) {
@@ -137,6 +149,7 @@ impl Index {
                         }
 
                         if clause.presence == query::PRESENCE_PROHIBITED {
+                            let matching_set = Set::new(matching_doc_refs.clone());
                             let entry = prohibited_matches
                                 .entry(field.clone())
                                 .or_insert_with(Set::empty);

@@ -81,6 +81,10 @@ impl QueryLexer {
         &self.lexemes
     }
 
+    pub fn lexemes_mut(&mut self) -> &mut Vec<Lexeme> {
+        &mut self.lexemes
+    }
+
     pub fn next(&mut self) -> char {
         if self.pos >= self.length {
             return EOS_CHAR;

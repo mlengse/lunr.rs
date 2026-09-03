@@ -50,6 +50,7 @@ impl Tokenizer {
     }
 
     /// A predicate marking whether a character is a token separator.
+    #[inline]
     pub fn is_separator(&self, ch: char) -> bool {
         self.separators.contains(&ch)
     }
@@ -124,24 +125,26 @@ pub type Term = String;
 #[derive(Clone)]
 pub struct Token {
     pub term: Term,
-    pub metadata: HashMap<String, Metadata>,
+    pub metadata: Option<HashMap<String, Metadata>>,
 }
 
 impl Token {
     pub fn new<S: Into<String>>(term: S) -> Token {
         Token {
             term: term.into(),
-            metadata: HashMap::new(),
+            metadata: None,
         }
     }
 
     pub fn update<F: FnMut(String, HashMap<String, Metadata>) -> String>(&mut self, mut f: F) {
-        self.term = f(self.term.clone(), self.metadata.clone());
+        let md = self.metadata.take().unwrap_or_default();
+        self.term = f(self.term.clone(), md);
     }
 
     pub fn clone_with<F: FnMut(String, HashMap<String, Metadata>) -> String>(&self, mut f: F) -> Token {
+        let md = self.metadata.clone().unwrap_or_default();
         Token {
-            term: f(self.term.clone(), self.metadata.clone()),
+            term: f(self.term.clone(), md),
             metadata: self.metadata.clone(),
         }
     }
@@ -204,8 +207,8 @@ mod tests {
     #[test]
     fn token_metadata() {
         let mut token = Token::new("foo");
-        token.metadata.insert("string".into(), Value::String("string".into()));
-        token.metadata.insert("number".into(), Value::Number(123.into()));
+        token.metadata.get_or_insert_with(HashMap::new).insert("string".into(), Value::String("string".into()));
+        token.metadata.get_or_insert_with(HashMap::new).insert("number".into(), Value::Number(123.into()));
     }
 
     #[test]

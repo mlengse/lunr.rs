@@ -33,7 +33,7 @@ impl QueryParser {
 
     pub fn parse(mut self) -> Result<Query, QueryParseError> {
         self.lexer.run();
-        self.lexemes = self.lexer.lexemes().to_vec();
+        self.lexemes = std::mem::take(&mut self.lexer.lexemes_mut());
 
         let mut state = Some(ParserStateId::ParseClause);
         while let Some(s) = state {
@@ -49,7 +49,15 @@ impl QueryParser {
 
     fn consume_lexeme(&mut self) -> Option<Lexeme> {
         if self.lexeme_idx < self.lexemes.len() {
-            let lexeme = self.lexemes[self.lexeme_idx].clone();
+            let lexeme = std::mem::replace(
+                &mut self.lexemes[self.lexeme_idx],
+                Lexeme {
+                    lexeme_type: crate::query_lexer::TokenType::EOS,
+                    str: String::new(),
+                    start: 0,
+                    end: 0,
+                },
+            );
             self.lexeme_idx += 1;
             Some(lexeme)
         } else {
@@ -181,9 +189,15 @@ fn parse_term(parser: &mut QueryParser) -> Result<Option<ParserStateId>, QueryPa
         None => return Ok(None),
     };
 
-    parser.current_clause.term = lexeme.str.to_lowercase();
+    let term = lexeme.str;
+    let lowered = if term.bytes().all(|b| !b.is_ascii_uppercase()) {
+        term
+    } else {
+        term.to_lowercase()
+    };
+    parser.current_clause.term = lowered;
 
-    if lexeme.str.contains('*') {
+    if parser.current_clause.term.contains('*') {
         parser.current_clause.use_pipeline = false;
     }
 
