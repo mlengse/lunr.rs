@@ -31,7 +31,7 @@ in JavaScript.
   (e.g. non-English) stemmers/functions into the index or search pipeline.
 - **Integration tests** — `tests/parity.rs` compares index JSON, search results, and
   roundtrip load-then-search against lunr.js v2.3.9 reference fixtures.
-- **87 tests** (84 unit + 3 integration) across all modules.
+- **94 tests** (84 unit + 3 integration + 2 stemmer + 5 token_set) across all modules.
 - **Perf benchmark** — criterion suites under `benches/` mirroring lunr.js
   `perf/*_perf.js`; side-by-side vs lunr.js via root `bench_lunr.py`. Baseline in
   `perf/baseline-<date>.json`. See `CHANGELOG.md` Phase 9 for highlights.

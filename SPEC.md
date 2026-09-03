@@ -6,7 +6,7 @@
 | **Target** | lunr.js v2.3.9 compatible index output |
 | **Rust edition** | 2021 |
 | **License** | MIT |
-| **Status** | Proof of concept — Phases 1-8 complete, 87 tests. Core wire-format parity with lunr.js v2.3.9; NFC normalization, configurable tokenizer separator, and plugin pipeline functions (non-English stemmers) all implemented |
+| **Status** | Proof of concept — Phases 1-8 complete, 94 tests. Core wire-format parity with lunr.js v2.3.9; NFC normalization, configurable tokenizer separator, and plugin pipeline functions (non-English stemmers) all implemented |
 
 This document is the **source of truth** for lunr.rs behavior. All implementation
 decisions must conform to this spec. Deviations require spec updates first.
@@ -404,7 +404,7 @@ lunr.js has 540 tests across: `builder`, `field_ref`, `idf`, `index`, `lunr`,
 | Module | Status | Notes |
 |---|---|---|
 | `field_ref` | **OK** | `fromString`, `JOINER` const, `Display` impl, `to_ref_string()` |
-| `token` | **OK** | `update()`, `clone()`, `clone_with()`, `Display`. `Metadata` = `serde_json::Value` |
+| `token` | **OK** | `update()`, `clone()`, `clone_with()`, `Display`. `Metadata` = `serde_json::Value`; `Token::new` allocates no metadata map (`Option<HashMap>` — empty stays `None` until populated) |
 | `tokenizer` | **OK** | NFC-normalize + lowercase, split on configurable separator. ASCII fast path; no per-token metadata (matches lunr.js default `metadataWhitelist`) |
 | `vector` | **OK** | `BTreeMap` sparse vector with `insert`, `upsert`, `dot`, `magnitude` (Cell-cached), `similarity` (asymmetric). `from_elements` for deserialization |
 | `inverted_index` | **OK** | Correct shape, `document_count()`, `terms()`, `field_posting()`, `add_posting_raw()` for load. `FieldPosting` public |
