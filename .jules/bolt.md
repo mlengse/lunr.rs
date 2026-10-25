@@ -1,0 +1,3 @@
+## 2025-10-25 - Contiguous sorted Vec vs BTreeMap for Sparse Vectors
+**Learning:** In Rust search engine code bases, sparse term vectors (`Vector`) are frequently iterated sequentially during scoring (dot products & similarity). Using `BTreeMap<u32, f64>` introduces node allocation overhead and pointer chasing across the heap. Replacing `BTreeMap` with `Vec<(u32, f64)>` sorted by index keeps data contiguous in memory, eliminating pointer dereferences and enabling CPU prefetching.
+**Action:** Prefer `Vec<(K, V)>` sorted by key over `BTreeMap` for small-to-medium sparse vectors and maps where traversal/dot product iteration is on the critical hot path.

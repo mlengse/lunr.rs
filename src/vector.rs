@@ -1,33 +1,39 @@
 use std::cell::Cell;
-use std::collections::BTreeMap;
 
 use serde::ser::{Serialize, Serializer, SerializeSeq};
 
+/// A sparse vector representation where elements are stored in a contiguous,
+/// index-sorted `Vec<(u32, f64)>` instead of a node-based `BTreeMap`.
+///
+/// Bolt's Optimization: Replacing BTreeMap with a contiguous sorted Vec improves cache
+/// locality dramatically during dot product iteration and magnitude calculations, eliminating
+/// heap node pointer dereferences and enabling CPU prefetching.
 #[derive(Debug, Default, Clone)]
 pub struct Vector {
-    elements: BTreeMap<u32, f64>,
+    elements: Vec<(u32, f64)>,
     magnitude_cache: Cell<Option<f64>>,
 }
 
 impl Vector {
     pub fn new() -> Self {
         Vector {
-            elements: BTreeMap::new(),
+            elements: Vec::new(),
             magnitude_cache: Cell::new(None),
         }
     }
 
     pub fn from_elements(elements: Vec<f64>) -> Self {
-        let mut map = BTreeMap::new();
+        let mut vec = Vec::with_capacity(elements.len() / 2);
         let mut i = 0;
         while i + 1 < elements.len() {
             let index = elements[i] as u32;
             let val = elements[i + 1];
-            map.insert(index, val);
+            vec.push((index, val));
             i += 2;
         }
+        vec.sort_by_key(|&(idx, _)| idx);
         Vector {
-            elements: map,
+            elements: vec,
             magnitude_cache: Cell::new(None),
         }
     }
@@ -43,11 +49,14 @@ impl Vector {
         F: FnOnce(f64, f64) -> f64,
     {
         self.magnitude_cache.set(None);
-        if let Some(existing) = self.elements.get(&index) {
-            let merged = merge_fn(*existing, val);
-            self.elements.insert(index, merged);
-        } else {
-            self.elements.insert(index, val);
+        match self.elements.binary_search_by_key(&index, |&(i, _)| i) {
+            Ok(i) => {
+                let merged = merge_fn(self.elements[i].1, val);
+                self.elements[i].1 = merged;
+            }
+            Err(i) => {
+                self.elements.insert(i, (index, val));
+            }
         }
     }
 
@@ -55,7 +64,7 @@ impl Vector {
         if let Some(m) = self.magnitude_cache.get() {
             return m;
         }
-        let sum: f64 = self.elements.values().map(|v| v * v).sum();
+        let sum: f64 = self.elements.iter().map(|&(_, v)| v * v).sum();
         let m = sum.sqrt();
         self.magnitude_cache.set(Some(m));
         m
@@ -68,7 +77,7 @@ impl Vector {
         let mut a_next = a_iter.next();
         let mut b_next = b_iter.next();
 
-        while let (Some((&a_idx, &a_val)), Some((&b_idx, &b_val))) = (a_next, b_next) {
+        while let (Some(&(a_idx, a_val)), Some(&(b_idx, b_val))) = (a_next, b_next) {
             if a_idx < b_idx {
                 a_next = a_iter.next();
             } else if a_idx > b_idx {
@@ -94,7 +103,7 @@ impl Vector {
     }
 
     pub fn to_array(&self) -> Vec<f64> {
-        self.elements.values().copied().collect()
+        self.elements.iter().map(|&(_, v)| v).collect()
     }
 }
 
@@ -105,9 +114,9 @@ impl Serialize for Vector {
     {
         let mut seq = serializer.serialize_seq(Some(self.elements.len() * 2))?;
 
-        for (index, score) in &self.elements {
-            seq.serialize_element(index)?;
-            seq.serialize_element(score)?;
+        for &(index, score) in &self.elements {
+            seq.serialize_element(&index)?;
+            seq.serialize_element(&score)?;
         }
 
         seq.end()
@@ -132,7 +141,7 @@ mod tests {
         let mut v = Vector::new();
         v.upsert(0, 1.0, |a, b| a + b);
         v.upsert(0, 2.0, |a, b| a + b);
-        assert_eq!(3.0, v.elements[&0]);
+        assert_eq!(3.0, v.elements[0].1);
     }
 
     #[test]
@@ -192,7 +201,7 @@ mod tests {
     fn from_elements() {
         let v = Vector::from_elements(vec![0.0, 1.5, 2.0, 3.0]);
         assert_eq!(2, v.elements.len());
-        assert_eq!(1.5, v.elements[&0]);
-        assert_eq!(3.0, v.elements[&2]);
+        assert_eq!(1.5, v.elements[0].1);
+        assert_eq!(3.0, v.elements[1].1);
     }
 }
