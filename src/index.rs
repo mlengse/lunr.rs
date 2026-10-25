@@ -326,10 +326,12 @@ impl Index {
             let term = arr[0].as_str().ok_or("invertedIndex term must be a string")?.to_string();
             token_set_builder.insert(&term);
 
-            let posting_obj = &arr[1];
-            if let Some(index_val) = posting_obj["_index"].as_u64() {
+            let posting_obj = arr[1]
+                .as_object()
+                .ok_or("invertedIndex posting object must be an object")?;
+            if let Some(index_val) = posting_obj.get("_index").and_then(|v| v.as_u64()) {
                 let mut posting = crate::inverted_index::Posting::new_raw(index_val as usize);
-                for (field_name, field_value) in posting_obj.as_object().unwrap() {
+                for (field_name, field_value) in posting_obj {
                     if field_name == "_index" {
                         continue;
                     }
@@ -468,5 +470,31 @@ impl Serialize for Index {
         index.serialize_field("invertedIndex", &self.inverted_index)?;
 
         index.end()
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_load_malformed_posting_obj_returns_err() {
+        let json = serde_json::json!({
+            "version": "2.3.9",
+            "fields": ["title"],
+            "fieldVectors": [],
+            "invertedIndex": [
+                ["term", 12345] // 12345 is a number, not an object
+            ]
+        });
+
+        let result = Index::load(&json);
+        assert!(result.is_err());
+        if let Err(err) = result {
+            assert_eq!(err, "invertedIndex posting object must be an object");
+        } else {
+            panic!("expected error");
+        }
     }
 }
